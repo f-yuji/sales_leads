@@ -312,7 +312,7 @@ class SQLiteStore:
             "db_name": self.db_path.name,
             "total": agg["total"],
             "last_updated": last_updated,
-            "status_counts": status_counts,
+            "status_counts": {status: status_counts.get(status, 0) for status in SALES_STATUSES},
         }
 
     def stats(self) -> dict[str, Any]:
@@ -447,9 +447,10 @@ class SupabaseStore:
             merged["next_action_at"] = status.get("next_action_at")
             merged["sales_memo"] = status.get("memo")
             rows.append(merged)
-        # exclude_q と radius_km だけ Python で処理
+        # Large related-table filters avoid huge PostgREST in_(...) URLs.
         if filters:
-            py_filters = {k: filters[k] for k in ("exclude_q", "radius_km") if filters.get(k)}
+            py_filter_keys = ("exclude_q", "radius_km", "status", "has_email", "has_form", "has_contact")
+            py_filters = {k: filters[k] for k in py_filter_keys if filters.get(k)}
             if py_filters:
                 rows = [r for r in rows if passes_filters(r, py_filters)]
         return rows
@@ -459,16 +460,24 @@ class SupabaseStore:
         id_sets: list[set] = []
         if filters.get("status") and filters["status"] != "all":
             r = self.client.table("sales_status").select("company_id").eq("status", filters["status"]).execute()
-            id_sets.append({row["company_id"] for row in r.data or []})
+            ids = {row["company_id"] for row in r.data or []}
+            if len(ids) <= 200:
+                id_sets.append(ids)
         if filters.get("has_email") == "1":
             r = self.client.table("company_contacts").select("company_id").not_.is_("email", "null").execute()
-            id_sets.append({row["company_id"] for row in r.data or []})
+            ids = {row["company_id"] for row in r.data or []}
+            if len(ids) <= 200:
+                id_sets.append(ids)
         if filters.get("has_form") == "1":
             r = self.client.table("company_contacts").select("company_id").not_.is_("contact_form_url", "null").execute()
-            id_sets.append({row["company_id"] for row in r.data or []})
+            ids = {row["company_id"] for row in r.data or []}
+            if len(ids) <= 200:
+                id_sets.append(ids)
         if filters.get("has_contact") == "1":
             r = self.client.table("company_contacts").select("company_id").execute()
-            id_sets.append({row["company_id"] for row in r.data or []})
+            ids = {row["company_id"] for row in r.data or []}
+            if len(ids) <= 200:
+                id_sets.append(ids)
         if not id_sets:
             return None
         result = id_sets[0]
@@ -552,15 +561,13 @@ class SupabaseStore:
         status_counts: dict[str, int] = {}
         for status in SALES_STATUSES:
             r = self.client.table("sales_status").select("*", count="exact").eq("status", status).limit(0).execute()
-            cnt = r.count or 0
-            if cnt > 0:
-                status_counts[status] = cnt
+            status_counts[status] = r.count or 0
 
         last_res = self.client.table("companies").select("imported_at").order("imported_at", desc=True).limit(1).execute()
         last_updated = (last_res.data[0].get("imported_at") or "")[:16] if last_res.data else ""
 
         return {
-            "db_name": "supabase",
+            "db_name": "sales.db",
             "total": total,
             "last_updated": last_updated,
             "status_counts": status_counts,
