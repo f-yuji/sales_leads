@@ -29,6 +29,8 @@ COMPANY_COLUMNS = [
     "permit_no",
     "representative",
     "office_type",
+    "established_at",
+    "established_raw",
     "latitude",
     "longitude",
     "distance_km",
@@ -51,6 +53,14 @@ EXPORT_COLUMNS = [
     "next_action_at",
     "sales_memo",
 ]
+
+SORT_OPTIONS = {
+    "imported_desc": ("imported_at", True),
+    "name_asc": ("company_name", False),
+    "name_desc": ("company_name", True),
+    "established_asc": ("established_at", False),
+    "established_desc": ("established_at", True),
+}
 
 
 def create_store() -> "SQLiteStore | SupabaseStore":
@@ -92,6 +102,8 @@ class SQLiteStore:
                     permit_no text,
                     representative text,
                     office_type text,
+                    established_at text,
+                    established_raw text,
                     latitude real,
                     longitude real,
                     distance_km real,
@@ -131,6 +143,13 @@ class SQLiteStore:
                 create index if not exists idx_companies_location on companies(prefecture, city, ward);
                 """
             )
+            existing_columns = {row["name"] for row in conn.execute("pragma table_info(companies)").fetchall()}
+            if "established_at" not in existing_columns:
+                conn.execute("alter table companies add column established_at text")
+            if "established_raw" not in existing_columns:
+                conn.execute("alter table companies add column established_raw text")
+            conn.execute("create index if not exists idx_companies_name on companies(company_name)")
+            conn.execute("create index if not exists idx_companies_established on companies(established_at)")
 
     def _find_duplicate_id(self, row: dict[str, Any]) -> int | None:
         conditions = []
@@ -193,19 +212,27 @@ class SQLiteStore:
                 [company_id] + [contact.get(col) for col in cols],
             )
 
-    def list_companies(self, filters: dict[str, Any] | None = None, limit: int = 500) -> list[dict[str, Any]]:
+    def list_companies(
+        self,
+        filters: dict[str, Any] | None = None,
+        limit: int = 500,
+        offset: int = 0,
+        sort: str = "imported_desc",
+    ) -> list[dict[str, Any]]:
         with self.connect() as conn:
+            sort_column, sort_desc = SORT_OPTIONS.get(sort, SORT_OPTIONS["imported_desc"])
             rows = conn.execute(
-                """
+                f"""
                 select c.*, cc.website_url, cc.email, cc.contact_form_url, cc.confidence,
                        ss.status, ss.last_contacted_at, ss.next_action_at, ss.memo as sales_memo
                 from companies c
                 left join company_contacts cc on cc.company_id = c.id
                 left join sales_status ss on ss.company_id = c.id
-                order by c.imported_at desc, c.id desc
+                order by c.{sort_column} {'desc' if sort_desc else 'asc'}, c.id desc
                 limit ?
+                offset ?
                 """,
-                (limit,),
+                (limit, offset),
             ).fetchall()
         data = [dict(row) for row in rows]
         if filters:
@@ -267,6 +294,14 @@ class SupabaseStore:
         from supabase import create_client
 
         self.client = create_client(url, key)
+        self.established_sort_available = self._check_established_columns()
+
+    def _check_established_columns(self) -> bool:
+        try:
+            self.client.table("companies").select("established_at,established_raw").limit(1).execute()
+            return True
+        except Exception:
+            return False
 
     def upsert_company(self, company: dict[str, Any], contact: dict[str, Any] | None = None) -> tuple[str, bool]:
         existing_id = self._find_duplicate_id(company)
@@ -316,8 +351,14 @@ class SupabaseStore:
                 return result.data[0]["id"]
         return None
 
-    def list_companies(self, filters: dict[str, Any] | None = None, limit: int = 500) -> list[dict[str, Any]]:
-        companies = self._list_company_rows(limit)
+    def list_companies(
+        self,
+        filters: dict[str, Any] | None = None,
+        limit: int = 500,
+        offset: int = 0,
+        sort: str = "imported_desc",
+    ) -> list[dict[str, Any]]:
+        companies = self._list_company_rows(limit, offset, sort)
         company_ids = [row["id"] for row in companies]
         contacts = self._list_related_rows("company_contacts", company_ids)
         statuses = self._list_related_rows("sales_status", company_ids)
@@ -339,15 +380,18 @@ class SupabaseStore:
             rows = [row for row in rows if passes_filters(row, filters)]
         return rows
 
-    def _list_company_rows(self, limit: int) -> list[dict[str, Any]]:
+    def _list_company_rows(self, limit: int, offset: int = 0, sort: str = "imported_desc") -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
+        sort_column, sort_desc = SORT_OPTIONS.get(sort, SORT_OPTIONS["imported_desc"])
+        if sort_column == "established_at" and not self.established_sort_available:
+            sort_column, sort_desc = SORT_OPTIONS["imported_desc"]
         chunk_size = 1000
-        for start in range(0, limit, chunk_size):
-            end = min(start + chunk_size - 1, limit - 1)
+        for start in range(offset, offset + limit, chunk_size):
+            end = min(start + chunk_size - 1, offset + limit - 1)
             result = (
                 self.client.table("companies")
                 .select("*")
-                .order("imported_at", desc=True)
+                .order(sort_column, desc=sort_desc)
                 .order("id", desc=True)
                 .range(start, end)
                 .execute()

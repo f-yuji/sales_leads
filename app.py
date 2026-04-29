@@ -21,6 +21,14 @@ app.secret_key = "local-sales-leads-dev"
 store = create_store()
 
 
+def parse_positive_int(value: str | None, default: int, maximum: int) -> int:
+    try:
+        parsed = int(value or default)
+    except ValueError:
+        return default
+    return max(1, min(parsed, maximum))
+
+
 def read_csv_upload(file_storage) -> list[dict[str, str]]:
     raw = file_storage.read()
     for encoding in ["utf-8-sig", "cp932", "utf-8"]:
@@ -49,6 +57,7 @@ def current_filters() -> dict[str, str]:
         "radius_km": request.args.get("radius_km", "50").strip(),
         "business_category": request.args.get("business_category", "all").strip(),
         "status": request.args.get("status", "all").strip(),
+        "sort": request.args.get("sort", "imported_desc").strip(),
     }
 
 
@@ -97,13 +106,18 @@ def import_csv() -> str | Response:
 @app.get("/companies")
 def companies() -> str:
     filters = current_filters()
-    all_rows = store.list_companies(filters=filters, limit=100000)
-    rows = all_rows[:500]
+    page = parse_positive_int(request.args.get("page"), 1, 100000)
+    per_page = parse_positive_int(request.args.get("per_page"), 100, 500)
+    offset = (page - 1) * per_page
+    rows = store.list_companies(filters=filters, limit=per_page, offset=offset, sort=filters["sort"])
     return render_template(
         "companies.html",
         rows=rows,
-        total_count=len(all_rows),
-        display_limit=500,
+        page=page,
+        per_page=per_page,
+        has_prev=page > 1,
+        has_next=len(rows) == per_page,
+        established_sort_available=getattr(store, "established_sort_available", True),
         filters=filters,
         categories=BUSINESS_CATEGORIES,
         statuses=SALES_STATUSES,

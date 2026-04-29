@@ -3,7 +3,7 @@
 <section class="page-head">
   <div>
     <h1>会社一覧</h1>
-    <p>地域・半径・業種・営業ステータスで絞り込みます。</p>
+    <p>条件で絞り込み、1ページずつ確認します。</p>
   </div>
   <a class="button" href="{{ url_for('export_csv', **filters) }}">CSV出力</a>
 </section>
@@ -33,6 +33,18 @@
       <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
     {% endfor %}
   </select>
+  <select name="sort">
+    <option value="imported_desc" {% if filters.sort == "imported_desc" %}selected{% endif %}>取込が新しい順</option>
+    <option value="name_asc" {% if filters.sort == "name_asc" %}selected{% endif %}>会社名 50音順</option>
+    <option value="name_desc" {% if filters.sort == "name_desc" %}selected{% endif %}>会社名 逆順</option>
+    <option value="established_asc" {% if filters.sort == "established_asc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業年月日 古い順{% if not established_sort_available %}（SQL追加後）{% endif %}</option>
+    <option value="established_desc" {% if filters.sort == "established_desc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業年月日 新しい順{% if not established_sort_available %}（SQL追加後）{% endif %}</option>
+  </select>
+  <select name="per_page">
+    {% for size in [50, 100, 200, 500] %}
+      <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}件</option>
+    {% endfor %}
+  </select>
   <label class="check"><input type="checkbox" name="has_tel" value="1" {% if filters.has_tel == "1" %}checked{% endif %}>電話あり</label>
   <label class="check"><input type="checkbox" name="has_contact" value="1" {% if filters.has_contact == "1" %}checked{% endif %}>連絡先あり</label>
   <label class="check"><input type="checkbox" name="has_email" value="1" {% if filters.has_email == "1" %}checked{% endif %}>メールあり</label>
@@ -41,7 +53,17 @@
 </form>
 
 <section class="panel">
-  <div class="table-meta">{{ total_count }} 件中 {{ rows|length }} 件表示{% if total_count > display_limit %} / CSV出力は条件一致全件{% endif %}</div>
+  <div class="list-bar">
+    <div class="table-meta">{{ page }}ページ目 / {{ rows|length }}件表示</div>
+    <div class="pager">
+      {% set prev_args = filters.copy() %}
+      {% set _ = prev_args.update({"page": page - 1, "per_page": per_page}) %}
+      {% set next_args = filters.copy() %}
+      {% set _ = next_args.update({"page": page + 1, "per_page": per_page}) %}
+      {% if has_prev %}<a class="button ghost" href="{{ url_for('companies', **prev_args) }}">前へ</a>{% endif %}
+      {% if has_next %}<a class="button ghost" href="{{ url_for('companies', **next_args) }}">次へ</a>{% endif %}
+    </div>
+  </div>
   <div class="table-wrap">
     <table class="companies">
       <thead>
@@ -49,7 +71,7 @@
           <th>会社</th>
           <th>連絡先</th>
           <th>所在地</th>
-          <th>距離</th>
+          <th>創業</th>
           <th>営業ステータス</th>
         </tr>
       </thead>
@@ -71,7 +93,10 @@
               <span>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</span>
               <span>{{ row.address or "" }}</span>
             </td>
-            <td>{% if row.distance_km is not none %}{{ row.distance_km }} km{% endif %}</td>
+            <td>
+              <span>{{ row.established_at or "" }}</span>
+              <span>{{ row.established_raw or "" }}</span>
+            </td>
             <td>
               <form class="status-form" method="post" action="{{ url_for('update_company_status', company_id=row.id) }}">
                 <select name="status">

@@ -14,6 +14,8 @@ create table if not exists companies (
     permit_no text,
     representative text,
     office_type text,
+    established_at date,
+    established_raw text,
     latitude double precision,
     longitude double precision,
     distance_km double precision,
@@ -55,4 +57,6 @@ create index if not exists idx_companies_permit on companies(permit_no);
 create index if not exists idx_companies_tel on companies(tel);
 create index if not exists idx_companies_location on companies(prefecture, city, ward);
 create index if not exists idx_companies_distance on companies(distance_km);
+create index if not exists idx_companies_name on companies(company_name);
+create index if not exists idx_companies_established on companies(established_at);
 create index if not exists idx_sales_status_status on sales_status(status);

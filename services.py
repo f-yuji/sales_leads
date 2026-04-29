@@ -58,6 +58,7 @@ FIELD_ALIASES = {
     "permit_no": ["permit_no", "許可番号", "建設業許可番号"],
     "representative": ["representative", "代表者", "代表者名"],
     "office_type": ["office_type", "主・従", "事務所種別", "営業所種別"],
+    "established_raw": ["established_raw", "設立年月日", "創業年月日", "設立日", "創業日"],
     "latitude": ["latitude", "lat", "緯度"],
     "longitude": ["longitude", "lon", "lng", "経度"],
     "source_url": ["source_url", "URL", "url", "参照URL"],
@@ -65,6 +66,8 @@ FIELD_ALIASES = {
     "email": ["email", "メール", "メールアドレス", "mail"],
     "contact_form_url": ["contact_form_url", "問い合わせフォーム", "問合せURL", "フォームURL"],
 }
+
+ERA_BASE_YEARS = {"R": 2018, "H": 1988, "S": 1925, "T": 1911, "M": 1867}
 
 
 def now_iso() -> str:
@@ -86,6 +89,24 @@ def parse_float(value: Any) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def parse_japanese_date(value: Any) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    normalized = text.translate(str.maketrans("０１２３４５６７８９．／－", "0123456789..."))
+    normalized = normalized.replace("/", ".").replace("-", ".")
+    match = re.match(r"^([RrHhSsTtMm])(\d{1,2})\.(\d{1,2})\.(\d{1,2})$", normalized)
+    if match:
+        era, year, month, day = match.groups()
+        full_year = ERA_BASE_YEARS[era.upper()] + int(year)
+        return f"{full_year:04d}-{int(month):02d}-{int(day):02d}"
+    match = re.match(r"^(\d{4})\.(\d{1,2})\.(\d{1,2})$", normalized)
+    if match:
+        year, month, day = match.groups()
+        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    return None
 
 
 def normalize_phone(value: Any) -> str | None:
@@ -136,6 +157,7 @@ def infer_category(row: dict[str, Any]) -> str:
 def normalize_company_row(row: dict[str, Any], center_lat: float, center_lon: float) -> dict[str, Any]:
     latitude = parse_float(pick(row, "latitude"))
     longitude = parse_float(pick(row, "longitude"))
+    established_raw = pick(row, "established_raw")
     distance = None
     if latitude is not None and longitude is not None:
         distance = round(haversine_km(center_lat, center_lon, latitude, longitude), 2)
@@ -153,6 +175,8 @@ def normalize_company_row(row: dict[str, Any], center_lat: float, center_lon: fl
         "permit_no": pick(row, "permit_no"),
         "representative": pick(row, "representative"),
         "office_type": pick(row, "office_type"),
+        "established_at": parse_japanese_date(established_raw),
+        "established_raw": established_raw,
         "latitude": latitude,
         "longitude": longitude,
         "distance_km": distance,

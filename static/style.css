@@ -226,6 +226,19 @@ input, select {
   margin-bottom: 10px;
 }
 
+.list-bar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pager {
+  display: flex;
+  gap: 8px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

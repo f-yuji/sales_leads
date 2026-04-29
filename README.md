@@ -20,6 +20,13 @@ python app.py
 
 Supabase環境変数が未設定の場合は `data/sales_leads.sqlite3` にローカル保存します。
 
+既存DBに創業年月日ソート用の列を足す場合は、Supabase SQL Editorで `migration_add_established.sql` を実行します。その後、宅建CSVから設立年月日を反映できます。
+
+```powershell
+python scripts\backfill_takken_established_dates.py "C:\Users\f-yuj\Downloads\kokudo_all_takken_20240806_merged.csv"
+python scripts\backfill_takken_established_dates.py "C:\Users\f-yuj\Downloads\kokudo_all_takken_20240806_merged.csv" --apply
+```
+
 ## CSV取込ヘッダー
 
 以下のような列名を自動認識します。
