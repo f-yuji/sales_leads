@@ -36,7 +36,6 @@
       <table class="data">
         <thead>
           <tr>
-            <th class="row-num">#</th>
             <th>会社名</th>
             <th>業種</th>
             <th>所在地</th>
@@ -49,7 +48,6 @@
             {% set st = row.status or '未対応' %}
             {% set meta = status_meta.get(st, {'cls': 'b-untouched'}) %}
             <tr>
-              <td class="row-num">{{ row.id }}</td>
               <td><span class="strong">{{ row.company_name }}</span></td>
               <td>{{ row.business_category }}</td>
               <td>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</td>
@@ -57,7 +55,7 @@
               <td><span class="badge {{ meta.cls }}">{{ st }}</span></td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="empty">まだデータがありません。</td></tr>
+            <tr><td colspan="5" class="empty">まだデータがありません。</td></tr>
           {% endfor %}
         </tbody>
       </table>

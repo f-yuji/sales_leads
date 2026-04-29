@@ -83,7 +83,6 @@
     <table class="data">
       <thead>
         <tr>
-          <th class="row-num">#</th>
           <th>会社</th>
           <th>連絡先</th>
           <th>所在地</th>
@@ -96,7 +95,6 @@
           {% set st = row.status or '未対応' %}
           {% set meta = status_meta.get(st, {'cls': 'b-untouched'}) %}
           <tr>
-            <td class="row-num">{{ row.id }}</td>
             <td>
               <span class="strong">{{ row.company_name }}</span>
               <span class="sub">{{ row.business_category }} · {{ row.source_type }}</span>
@@ -130,7 +128,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="empty">条件に合う会社がありません。</td></tr>
+          <tr><td colspan="5" class="empty">条件に合う会社がありません。</td></tr>
         {% endfor %}
       </tbody>
     </table>
