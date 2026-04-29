@@ -11,6 +11,7 @@ Serper API / Brave Search API を使用:
     python scripts/search_websites.py --prefecture 神奈川県
     python scripts/search_websites.py --provider serper
     python scripts/search_websites.py --provider brave
+    python scripts/search_websites.py --provider cascade
     python scripts/search_websites.py --dry-run
 """
 
@@ -47,7 +48,8 @@ SKIP_DOMAINS = [
     "suumo.jp", "athome.co.jp", "homes.co.jp", "chintai.net",
     "reins.or.jp", "takken.or.jp",
     "ekiten.jp", "itp.ne.jp", "mapion.co.jp", "navitime.co.jp",
-    "24u.jp", "jpon.xyz", "tel-no.com", "denwabangou.net",
+    "24u.jp", "jpon.xyz", "tel-no.com", "denwabangou.net", "jpnumber.com",
+    "maisuma.jp", "sumaistar.com", "ielove.co.jp",
     "hotpepper.jp", "tabelog.com", "gurunavi.com",
     "wikipedia.org", "wikidata.org",
     "facebook.com", "twitter.com", "x.com", "instagram.com",
@@ -212,20 +214,12 @@ def build_query(company_name: str, tel: str | None, address: str | None) -> str:
     return " ".join(parts)
 
 
-def search_website(
+def choose_best_candidate(
+    candidates: list[Candidate],
     company_name: str,
     tel: str | None,
     address: str | None,
-    provider: str,
 ) -> tuple[str | None, Candidate | None, int]:
-    query = build_query(company_name, tel, address)
-
-    candidates: list[Candidate] = []
-    if provider in ["serper", "both"]:
-        candidates.extend(search_serper(query))
-    if provider in ["brave", "both"]:
-        candidates.extend(search_brave(query))
-
     by_url: dict[str, Candidate] = {}
     provider_counts: dict[str, int] = {}
     for candidate in candidates:
@@ -255,6 +249,31 @@ def search_website(
     return best.url, best, best_score
 
 
+def search_website(
+    company_name: str,
+    tel: str | None,
+    address: str | None,
+    provider: str,
+    cascade_threshold: int,
+) -> tuple[str | None, Candidate | None, int]:
+    query = build_query(company_name, tel, address)
+
+    if provider == "cascade":
+        brave_candidates = search_brave(query)
+        brave_url, brave_best, brave_score = choose_best_candidate(brave_candidates, company_name, tel, address)
+        if brave_url and brave_score >= cascade_threshold:
+            return brave_url, brave_best, brave_score
+        candidates = brave_candidates + search_serper(query)
+        return choose_best_candidate(candidates, company_name, tel, address)
+
+    candidates: list[Candidate] = []
+    if provider in ["serper", "both"]:
+        candidates.extend(search_serper(query))
+    if provider in ["brave", "both"]:
+        candidates.extend(search_brave(query))
+    return choose_best_candidate(candidates, company_name, tel, address)
+
+
 def upsert_contact(client, company_id: str, website_url: str | None) -> None:
     existing = (
         client.table("company_contacts")
@@ -281,13 +300,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--prefecture", type=str, default=None)
-    parser.add_argument("--provider", choices=["serper", "brave", "both"], default="both")
+    parser.add_argument("--provider", choices=["serper", "brave", "both", "cascade"], default="cascade")
+    parser.add_argument("--cascade-threshold", type=int, default=45)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    if args.provider in ["serper", "both"] and not SERPER_API_KEY:
+    if args.provider in ["serper", "both", "cascade"] and not SERPER_API_KEY:
         print("WARN: SERPER_API_KEY is not set in .env")
-    if args.provider in ["brave", "both"] and not BRAVE_SEARCH_API_KEY:
+    if args.provider in ["brave", "both", "cascade"] and not BRAVE_SEARCH_API_KEY:
         print("WARN: BRAVE_SEARCH_API_KEY is not set in .env")
     if not SERPER_API_KEY and not BRAVE_SEARCH_API_KEY:
         print("ERROR: SERPER_API_KEY or BRAVE_SEARCH_API_KEY is required")
@@ -297,6 +317,9 @@ def main() -> None:
         sys.exit(1)
     if args.provider == "brave" and not BRAVE_SEARCH_API_KEY:
         print("ERROR: --provider brave requires BRAVE_SEARCH_API_KEY")
+        sys.exit(1)
+    if args.provider == "cascade" and not BRAVE_SEARCH_API_KEY:
+        print("ERROR: --provider cascade requires BRAVE_SEARCH_API_KEY")
         sys.exit(1)
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("ERROR: Supabase connection is not configured")
@@ -322,6 +345,8 @@ def main() -> None:
 
     targets = [company for company in companies_res.data if company["id"] not in done_ids][: args.limit]
     print(f"provider: {args.provider}")
+    if args.provider == "cascade":
+        print(f"cascade_threshold: {args.cascade_threshold}")
     print(f"targets: {len(targets)}{' (dry-run)' if args.dry_run else ''}\n")
 
     found = 0
@@ -333,7 +358,13 @@ def main() -> None:
         address = company.get("address") or f"{company.get('prefecture', '')}{company.get('city', '')}"
 
         print(f"[{i:>3}/{len(targets)}] {name}", end="  ", flush=True)
-        url, candidate, score = search_website(name, tel=tel, address=address or None, provider=args.provider)
+        url, candidate, score = search_website(
+            name,
+            tel=tel,
+            address=address or None,
+            provider=args.provider,
+            cascade_threshold=args.cascade_threshold,
+        )
 
         if url:
             provider_label = candidate.provider if candidate else "-"
