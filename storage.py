@@ -478,7 +478,43 @@ class SupabaseStore:
         }
 
     def stats(self) -> dict[str, Any]:
-        return SQLiteStore.stats(self)  # type: ignore[misc]
+        from services import SALES_STATUSES
+
+        total_res = self.client.table("companies").select("*", count="exact").limit(0).execute()
+        total = total_res.count or 0
+
+        email_res = self.client.table("company_contacts").select("*", count="exact").not_.is_("email", "null").limit(0).execute()
+        email_count = email_res.count or 0
+
+        form_res = self.client.table("company_contacts").select("*", count="exact").not_.is_("contact_form_url", "null").limit(0).execute()
+        form_count = form_res.count or 0
+
+        status_counts: dict[str, int] = {}
+        for status in SALES_STATUSES:
+            r = self.client.table("sales_status").select("*", count="exact").eq("status", status).limit(0).execute()
+            status_counts[status] = r.count or 0
+
+        sent = status_counts.get("送信済み", 0)
+        replied = status_counts.get("返信あり", 0)
+
+        last_res = self.client.table("companies").select("imported_at").order("imported_at", desc=True).limit(1).execute()
+        last_updated = (last_res.data[0].get("imported_at") or "")[:16] if last_res.data else "-"
+
+        return {
+            "total": total,
+            "email_count": email_count,
+            "form_count": form_count,
+            "untouched": status_counts.get("未対応", 0),
+            "sent": sent,
+            "replied": replied,
+            "followup": status_counts.get("要フォロー", 0),
+            "bounced": status_counts.get("バウンス", 0),
+            "closed": status_counts.get("クローズ", 0),
+            "email_rate": round(email_count / total * 100, 1) if total else 0,
+            "form_rate": round(form_count / total * 100, 1) if total else 0,
+            "reply_rate": round(replied / sent * 100, 1) if sent else 0,
+            "last_updated": last_updated,
+        }
 
     def export_csv(self, path: Path, filters: dict[str, Any] | None = None) -> int:
         return SQLiteStore.export_csv(self, path, filters)  # type: ignore[misc]
