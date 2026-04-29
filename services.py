@@ -33,14 +33,11 @@ SOURCE_TYPES = [
 
 SALES_STATUSES = [
     "未対応",
-    "サイト確認中",
-    "メール取得済み",
-    "問い合わせフォーム取得済み",
     "送信済み",
     "返信あり",
-    "見込みあり",
-    "NG",
-    "保留",
+    "要フォロー",
+    "バウンス",
+    "クローズ",
 ]
 
 CONTACT_CONFIDENCE = ["high", "medium", "low", "guessed", "invalid"]

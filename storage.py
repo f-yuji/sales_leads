@@ -256,6 +256,28 @@ class SQLiteStore:
                 (company_id, status, memo, next_action_at, now_iso(), now_iso()),
             )
 
+    def sidebar_stats(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            agg = conn.execute(
+                "select count(*) as total, max(imported_at) as last_updated from companies"
+            ).fetchone()
+            status_rows = conn.execute(
+                """
+                select coalesce(ss.status, '未対応') as status, count(*) as cnt
+                from companies c
+                left join sales_status ss on ss.company_id = c.id
+                group by coalesce(ss.status, '未対応')
+                """
+            ).fetchall()
+        last_updated = (agg["last_updated"] or "")[:16]
+        status_counts = {r["status"]: r["cnt"] for r in status_rows}
+        return {
+            "db_name": self.db_path.name,
+            "total": agg["total"],
+            "last_updated": last_updated,
+            "status_counts": status_counts,
+        }
+
     def stats(self) -> dict[str, Any]:
         rows = self.list_companies(limit=100000)
         total = len(rows)
@@ -264,6 +286,9 @@ class SQLiteStore:
         untouched = sum(1 for row in rows if row.get("status") == "未対応")
         sent = sum(1 for row in rows if row.get("status") == "送信済み")
         replied = sum(1 for row in rows if row.get("status") == "返信あり")
+        followup = sum(1 for row in rows if row.get("status") == "要フォロー")
+        bounced = sum(1 for row in rows if row.get("status") == "バウンス")
+        closed = sum(1 for row in rows if row.get("status") == "クローズ")
         checked_dates = [row.get("last_checked_at") or row.get("imported_at") for row in rows if row.get("last_checked_at") or row.get("imported_at")]
         return {
             "total": total,
@@ -272,7 +297,11 @@ class SQLiteStore:
             "untouched": untouched,
             "sent": sent,
             "replied": replied,
+            "followup": followup,
+            "bounced": bounced,
+            "closed": closed,
             "email_rate": round(email_count / total * 100, 1) if total else 0,
+            "form_rate": round(form_count / total * 100, 1) if total else 0,
             "reply_rate": round(replied / sent * 100, 1) if sent else 0,
             "last_updated": max(checked_dates) if checked_dates else "-",
         }
@@ -424,6 +453,22 @@ class SupabaseStore:
             },
             on_conflict="company_id",
         ).execute()
+
+    def sidebar_stats(self) -> dict[str, Any]:
+        rows = self.list_companies(limit=100000)
+        total = len(rows)
+        status_counts: dict[str, int] = {}
+        for row in rows:
+            s = row.get("status") or "未対応"
+            status_counts[s] = status_counts.get(s, 0) + 1
+        checked = [row.get("last_checked_at") or row.get("imported_at") for row in rows if row.get("last_checked_at") or row.get("imported_at")]
+        last_updated = (max(checked) if checked else "")[:16]
+        return {
+            "db_name": "supabase",
+            "total": total,
+            "last_updated": last_updated,
+            "status_counts": status_counts,
+        }
 
     def stats(self) -> dict[str, Any]:
         return SQLiteStore.stats(self)  # type: ignore[misc]

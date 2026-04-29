@@ -4,28 +4,129 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>営業先DB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') }}">営業先DB</a>
-    <nav>
-      <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
-      <a href="{{ url_for('import_csv') }}">CSV取込</a>
-      <a href="{{ url_for('companies') }}">会社一覧</a>
-    </nav>
-  </header>
-  <main class="container">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="messages">
-          {% for category, message in messages %}
-            <div class="message {{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chevron-down" viewBox="0 0 16 16"><path fill="currentColor" d="M2 5.7L3.4 4.3 8 8.9l4.6-4.6L14 5.7l-6 6z"/></symbol>
+    <symbol id="i-table" viewBox="0 0 16 16"><path fill="currentColor" d="M13.5 2h-11l-.5.5v11l.5.5h11l.5-.5v-11L13.5 2zM6 13H3V9h3v4zm0-5H3V5h3v3zm4 5H7V9h3v4zm0-5H7V5h3v3zm3 5h-2V9h2v4zm0-5h-2V5h2v3z"/></symbol>
+    <symbol id="i-import" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1l4 4h-3v5H7V5H4l4-4zM2 12v2h12v-2h-1v1H3v-1H2z"/></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 16 16"><path fill="currentColor" d="M2 2h5v6H2V2zm7 0h5v3H9V2zm0 5h5v7H9V7zM2 10h5v4H2v-4z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16"><path fill="currentColor" d="M5.5 2A6 6 0 002 12.5L3.4 11.1A4.5 4.5 0 016.5 3.5h2.6L7 5.5h6V0L11 2H5.5zm5 12A6 6 0 0014 3.5l-1.4 1.4A4.5 4.5 0 019.5 12.5H6.9L9 10.5H3v5.5L5 14h5.5z"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 16 16"><path fill="currentColor" d="M2 3h12l-5 6v5l-2-1V9L2 3z"/></symbol>
+  </defs>
+</svg>
+
+{% set status_meta = {
+  '未対応':   {'cls': 'b-untouched', 'color': '#c5c5c5'},
+  '送信済み': {'cls': 'b-sent',      'color': '#4fc1ff'},
+  '返信あり': {'cls': 'b-replied',   'color': '#3fb98e'},
+  '要フォロー': {'cls': 'b-followup','color': '#dcdcaa'},
+  'バウンス': {'cls': 'b-bounced',   'color': '#f48771'},
+  'クローズ': {'cls': 'b-closed',    'color': '#c586c0'},
+} %}
+{% set current = current or '' %}
+
+<div class="app">
+
+  <nav class="sidebar">
+    <div class="side-brand">
+      <span class="dot"></span>
+      <span>営業先DB</span>
+      <small style="margin-left:auto" class="mono">{{ sidebar.db_name or 'sales.db' }}</small>
+    </div>
+
+    <div class="tree-section">
+      <svg class="chev"><use href="#i-chevron-down"/></svg>
+      <span>画面</span>
+    </div>
+    <div class="tree-children">
+      <a class="tree-item {% if current == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+        <svg class="ico-blue"><use href="#i-dashboard"/></svg>
+        <span>ダッシュボード</span>
+      </a>
+      <a class="tree-item {% if current == 'companies' %}active{% endif %}" href="{{ url_for('companies') }}">
+        <svg class="ico-yellow"><use href="#i-table"/></svg>
+        <span>会社一覧</span>
+        {% if sidebar.total is defined %}<span class="count">{{ "{:,}".format(sidebar.total) }}</span>{% endif %}
+      </a>
+      <a class="tree-item {% if current == 'import' %}active{% endif %}" href="{{ url_for('import_csv') }}">
+        <svg class="ico-green"><use href="#i-import"/></svg>
+        <span>CSV取込</span>
+      </a>
+    </div>
+
+    {% if sidebar.status_counts %}
+    <div class="tree-section">
+      <svg class="chev"><use href="#i-chevron-down"/></svg>
+      <span>ステータス内訳</span>
+    </div>
+    <div class="tree-children">
+      {% for label, count in sidebar.status_counts.items() %}
+        {% set meta = status_meta.get(label, {'color': '#858585'}) %}
+        <a class="tree-item" href="{{ url_for('companies', status=label) }}">
+          <span class="dot" style="background: {{ meta.color }}"></span>
+          <span>{{ label }}</span>
+          <span class="count">{{ "{:,}".format(count) }}</span>
+        </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </nav>
+
+  <section class="main">
+
+    <div class="tabstrip">
+      <a class="tab {% if current == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+        <svg style="color:#4fc1ff"><use href="#i-dashboard"/></svg>
+        <span>ダッシュボード</span>
+      </a>
+      <a class="tab {% if current == 'companies' %}active{% endif %}" href="{{ url_for('companies') }}">
+        <svg style="color:#dcdcaa"><use href="#i-table"/></svg>
+        <span>会社一覧</span>
+      </a>
+      <a class="tab {% if current == 'import' %}active{% endif %}" href="{{ url_for('import_csv') }}">
+        <svg style="color:#3fb98e"><use href="#i-import"/></svg>
+        <span>CSV取込</span>
+      </a>
+    </div>
+
+    <div class="page">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="messages">
+            {% for category, message in messages %}
+              <div class="message {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+
+  </section>
+
+  <footer class="statusbar">
+    <div class="seg"><span class="mono">{{ sidebar.db_name or 'sales.db' }}</span></div>
+    {% if sidebar.total is defined %}<div class="seg"><span class="mono">{{ "{:,}".format(sidebar.total) }} 件</span></div>{% endif %}
+    <div class="spacer"></div>
+    {% if sidebar.last_updated %}<div class="seg"><span class="mono">{{ sidebar.last_updated }}</span></div>{% endif %}
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll('.tree-section').forEach(s => {
+    s.addEventListener('click', () => s.classList.toggle('collapsed'));
+  });
+  document.querySelectorAll('.panel-head').forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed'));
+  });
+</script>
 </body>
 </html>

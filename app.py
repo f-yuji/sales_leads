@@ -21,6 +21,11 @@ app.secret_key = "local-sales-leads-dev"
 store = create_store()
 
 
+@app.context_processor
+def inject_sidebar():
+    return {"sidebar": store.sidebar_stats()}
+
+
 def parse_positive_int(value: str | None, default: int, maximum: int) -> int:
     try:
         parsed = int(value or default)
@@ -160,4 +165,4 @@ def health() -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5050)
+    app.run(debug=True, host="0.0.0.0", port=5050)

@@ -1,52 +1,67 @@
 {% extends "base.html" %}
+{% set current = 'dashboard' %}
 {% block content %}
 <section class="page-head">
   <div>
     <h1>ダッシュボード</h1>
-    <p>保存先: {{ store_name }}</p>
+    <div class="sub">保存先: <span class="mono">{{ store_name }}</span>{% if stats.last_updated %} · 最終更新 <span class="mono">{{ stats.last_updated }}</span>{% endif %}</div>
   </div>
-  <a class="button" href="{{ url_for('import_csv') }}">CSVを取り込む</a>
+  <div style="display:flex; gap:6px">
+    <a class="btn" href="{{ url_for('import_csv') }}"><svg><use href="#i-import"/></svg>CSVを取り込む</a>
+  </div>
 </section>
 
-<section class="metrics">
-  <div><span>登録会社数</span><strong>{{ stats.total }}</strong></div>
-  <div><span>メール取得件数</span><strong>{{ stats.email_count }}</strong></div>
-  <div><span>フォーム取得件数</span><strong>{{ stats.form_count }}</strong></div>
-  <div><span>未対応件数</span><strong>{{ stats.untouched }}</strong></div>
-  <div><span>送信済み件数</span><strong>{{ stats.sent }}</strong></div>
-  <div><span>返信あり件数</span><strong>{{ stats.replied }}</strong></div>
-  <div><span>メール取得率</span><strong>{{ stats.email_rate }}%</strong></div>
-  <div><span>返信率</span><strong>{{ stats.reply_rate }}%</strong></div>
-  <div><span>最終更新日</span><strong class="small">{{ stats.last_updated }}</strong></div>
-</section>
+<div class="metrics">
+  <div class="metric"><span class="label">登録会社数</span><span class="val">{{ "{:,}".format(stats.total) }}</span></div>
+  <div class="metric"><span class="label">メール取得</span><span class="val">{{ "{:,}".format(stats.email_count) }}</span></div>
+  <div class="metric"><span class="label">フォーム取得</span><span class="val">{{ "{:,}".format(stats.form_count) }}</span></div>
+  <div class="metric"><span class="label">未対応</span><span class="val">{{ "{:,}".format(stats.untouched) }}</span></div>
+  <div class="metric"><span class="label">送信済み</span><span class="val">{{ "{:,}".format(stats.sent) }}</span></div>
+  <div class="metric"><span class="label">返信あり</span><span class="val">{{ "{:,}".format(stats.replied) }}</span></div>
+  {% if stats.followup is defined %}<div class="metric"><span class="label">要フォロー</span><span class="val">{{ "{:,}".format(stats.followup) }}</span></div>{% endif %}
+  {% if stats.bounced is defined %}<div class="metric"><span class="label">バウンス</span><span class="val">{{ "{:,}".format(stats.bounced) }}</span></div>{% endif %}
+  {% if stats.closed is defined %}<div class="metric"><span class="label">クローズ</span><span class="val">{{ "{:,}".format(stats.closed) }}</span></div>{% endif %}
+  <div class="metric"><span class="label">メール取得率</span><span class="val">{{ stats.email_rate }}<span class="unit">%</span></span></div>
+  {% if stats.form_rate is defined %}<div class="metric"><span class="label">フォーム取得率</span><span class="val">{{ stats.form_rate }}<span class="unit">%</span></span></div>{% endif %}
+  <div class="metric"><span class="label">返信率</span><span class="val">{{ stats.reply_rate }}<span class="unit">%</span></span></div>
+</div>
 
-<section class="panel">
-  <h2>最近の登録</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>会社名</th>
-          <th>業種</th>
-          <th>所在地</th>
-          <th>距離</th>
-          <th>ステータス</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in recent %}
+<div class="panel">
+  <div class="panel-head">
+    <h2>最近の登録</h2>
+    <span class="right"><span class="mono">直近 {{ recent|length }} 件</span><svg class="chev"><use href="#i-chevron-down"/></svg></span>
+  </div>
+  <div class="panel-body flush">
+    <div class="tbl-wrap">
+      <table class="data">
+        <thead>
           <tr>
-            <td>{{ row.company_name }}</td>
-            <td>{{ row.business_category }}</td>
-            <td>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</td>
-            <td>{% if row.distance_km is not none %}{{ row.distance_km }} km{% endif %}</td>
-            <td>{{ row.status or "未対応" }}</td>
+            <th class="row-num">#</th>
+            <th>会社名</th>
+            <th>業種</th>
+            <th>所在地</th>
+            <th class="num">距離</th>
+            <th>ステータス</th>
           </tr>
-        {% else %}
-          <tr><td colspan="5" class="empty">まだデータがありません。</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for row in recent %}
+            {% set st = row.status or '未対応' %}
+            {% set meta = status_meta.get(st, {'cls': 'b-untouched'}) %}
+            <tr>
+              <td class="row-num">{{ row.id }}</td>
+              <td><span class="strong">{{ row.company_name }}</span></td>
+              <td>{{ row.business_category }}</td>
+              <td>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</td>
+              <td class="num">{% if row.distance_km is not none %}{{ row.distance_km }} km{% endif %}</td>
+              <td><span class="badge {{ meta.cls }}">{{ st }}</span></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty">まだデータがありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-</section>
+</div>
 {% endblock %}
