@@ -532,14 +532,37 @@ table.data .empty { color: var(--vsc-fg-muted); text-align: center; padding: 16p
 
   .filters { grid-template-columns: 1fr 1fr; }
 
-  .status-form {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-  }
-  .status-form select  { grid-column: 1 / -1; }
-  .status-form button  { grid-column: 2; }
-
   .metrics { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 
   .page-head { flex-wrap: wrap; }
+
+  /* カードレイアウト */
+  table.data { display: block; }
+  table.data thead { display: none; }
+  table.data tbody { display: flex; flex-direction: column; gap: 6px; }
+  table.data tbody tr {
+    display: block;
+    border: 1px solid var(--vsc-line);
+    border-radius: 3px;
+    padding: 8px 10px;
+    background: var(--vsc-bg-side);
+  }
+  table.data tbody td {
+    display: block;
+    border: none;
+    padding: 2px 0;
+  }
+  /* 所在地・創業は非表示 */
+  table.data tbody td:nth-child(3),
+  table.data tbody td:nth-child(4) { display: none; }
+
+  /* ステータスフォーム */
+  .status-form {
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .status-form select           { grid-column: 1 / -1; }
+  .status-form input[type="date"]  { grid-column: 1; }
+  .status-form input[type="text"]  { grid-column: 1 / -1; }
+  .status-form button           { grid-column: 2; align-self: end; }
 }
