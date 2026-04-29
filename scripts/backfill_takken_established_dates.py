@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -34,6 +35,8 @@ def main() -> None:
     rows = store.list_companies(limit=100000)
     updates = []
     for company in rows:
+        if company.get("established_raw"):
+            continue
         key = normalize_company_name_key(company.get("company_name"))
         established_at, established_raw = founded_by_name.get(key, (None, None))
         if established_raw:
@@ -51,8 +54,22 @@ def main() -> None:
         return
     for start in range(0, len(updates), 500):
         batch = updates[start:start + 500]
-        store.client.table("companies").upsert(batch).execute()
+        for row in batch:
+            for attempt in range(3):
+                try:
+                    store.client.table("companies").update(
+                        {
+                            "established_at": row["established_at"],
+                            "established_raw": row["established_raw"],
+                        }
+                    ).eq("id", row["id"]).execute()
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(2)
         print(f"updated={min(start + 500, len(updates))}/{len(updates)}")
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":
