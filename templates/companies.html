@@ -108,7 +108,8 @@
             </td>
             <td>
               <span>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</span>
-              <span class="sub">{{ row.address or "" }}{% if row.distance_km is not none %} · <span class="mono">{{ row.distance_km }} km</span>{% endif %}</span>
+              {% set addr = (row.address or "").replace(row.prefecture or "", "").replace(row.city or "", "") %}
+              <span class="sub">{{ addr }}{% if row.distance_km is not none %} · <span class="mono">{{ row.distance_km }} km</span>{% endif %}</span>
             </td>
             <td>
               {% if row.established_at %}<span class="mono">{{ row.established_at }}</span>{% endif %}
