@@ -455,14 +455,21 @@ class SupabaseStore:
         ).execute()
 
     def sidebar_stats(self) -> dict[str, Any]:
-        rows = self.list_companies(limit=100000)
-        total = len(rows)
+        from services import SALES_STATUSES
+
+        total_res = self.client.table("companies").select("*", count="exact").limit(0).execute()
+        total = total_res.count or 0
+
         status_counts: dict[str, int] = {}
-        for row in rows:
-            s = row.get("status") or "未対応"
-            status_counts[s] = status_counts.get(s, 0) + 1
-        checked = [row.get("last_checked_at") or row.get("imported_at") for row in rows if row.get("last_checked_at") or row.get("imported_at")]
-        last_updated = (max(checked) if checked else "")[:16]
+        for status in SALES_STATUSES:
+            r = self.client.table("sales_status").select("*", count="exact").eq("status", status).limit(0).execute()
+            cnt = r.count or 0
+            if cnt > 0:
+                status_counts[status] = cnt
+
+        last_res = self.client.table("companies").select("imported_at").order("imported_at", desc=True).limit(1).execute()
+        last_updated = (last_res.data[0].get("imported_at") or "")[:16] if last_res.data else ""
+
         return {
             "db_name": "supabase",
             "total": total,
