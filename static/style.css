@@ -199,9 +199,21 @@ input, select {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
-  grid-template-columns: repeat(8, minmax(110px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   padding: 12px;
   margin-bottom: 16px;
+}
+
+.check {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-height: 38px;
+}
+
+.check input {
+  min-height: auto;
+  width: auto;
 }
 
 .table-wrap {

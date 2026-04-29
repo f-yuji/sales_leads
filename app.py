@@ -36,10 +36,16 @@ def read_csv_upload(file_storage) -> list[dict[str, str]]:
 
 def current_filters() -> dict[str, str]:
     return {
+        "company_name": request.args.get("company_name", "").strip(),
         "prefecture": request.args.get("prefecture", "").strip(),
         "city": request.args.get("city", "").strip(),
         "ward": request.args.get("ward", "").strip(),
         "q": request.args.get("q", "").strip(),
+        "exclude_q": request.args.get("exclude_q", "").strip(),
+        "has_tel": request.args.get("has_tel", "").strip(),
+        "has_contact": request.args.get("has_contact", "").strip(),
+        "has_email": request.args.get("has_email", "").strip(),
+        "has_form": request.args.get("has_form", "").strip(),
         "radius_km": request.args.get("radius_km", "50").strip(),
         "business_category": request.args.get("business_category", "all").strip(),
         "status": request.args.get("status", "all").strip(),
@@ -91,10 +97,13 @@ def import_csv() -> str | Response:
 @app.get("/companies")
 def companies() -> str:
     filters = current_filters()
-    rows = store.list_companies(filters=filters, limit=1000)
+    all_rows = store.list_companies(filters=filters, limit=100000)
+    rows = all_rows[:500]
     return render_template(
         "companies.html",
         rows=rows,
+        total_count=len(all_rows),
+        display_limit=500,
         filters=filters,
         categories=BUSINESS_CATEGORIES,
         statuses=SALES_STATUSES,

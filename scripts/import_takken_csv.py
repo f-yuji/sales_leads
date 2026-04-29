@@ -10,9 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services import normalize_company_row, normalize_contact_row
-from storage import create_store
+from storage import SupabaseStore, create_store
 
 SOURCE_UPDATED_AT = "2024-08-06T00:00:00+09:00"
+BATCH_SIZE = 500
 TOKYO_23_WARDS = {
     "千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", "墨田区", "江東区", "品川区", "目黒区",
     "大田区", "世田谷区", "渋谷区", "中野区", "杉並区", "豊島区", "北区", "荒川区", "板橋区", "練馬区",
@@ -132,6 +133,35 @@ def convert_row(row: dict[str, str]) -> dict[str, str]:
     return converted
 
 
+def build_company(row: dict[str, str]) -> dict:
+    company = normalize_company_row(convert_row(row), 35.681236, 139.767125)
+    company["business_category"] = "real_estate"
+    company["source_type"] = "mlit_takken"
+    company["source_updated_at"] = SOURCE_UPDATED_AT
+    company["source_url"] = "https://etsuran2.mlit.go.jp/TAKKEN/"
+    return company
+
+
+def insert_supabase_batches(store: SupabaseStore, companies: list[dict]) -> tuple[int, int]:
+    created = 0
+    status_created = 0
+    for start in range(0, len(companies), BATCH_SIZE):
+        batch = companies[start:start + BATCH_SIZE]
+        result = store.client.table("companies").insert(batch).execute()
+        inserted = result.data or []
+        created += len(inserted)
+        status_rows = [
+            {"company_id": row["id"], "status": "未対応"}
+            for row in inserted
+            if row.get("id")
+        ]
+        if status_rows:
+            store.client.table("sales_status").insert(status_rows).execute()
+            status_created += len(status_rows)
+        print(f"inserted={created}/{len(companies)}")
+    return created, status_created
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import MLIT takken CSV for Tokyo-station 50km area.")
     parser.add_argument("csv_path", type=Path)
@@ -150,6 +180,14 @@ def main() -> None:
     skipped = 0
     seen_company_names: set[str] = set()
     store = create_store() if args.apply else None
+    existing_company_names: set[str] = set()
+    bulk_companies: list[dict] = []
+    if args.apply and isinstance(store, SupabaseStore):
+        existing_company_names = {
+            normalize_company_name_key(row.get("company_name"))
+            for row in store.list_companies(limit=100000)
+            if row.get("company_name")
+        }
 
     for raw in reader:
         total += 1
@@ -166,19 +204,23 @@ def main() -> None:
         if name_key in seen_company_names:
             duplicate_names += 1
             continue
+        if name_key in existing_company_names:
+            updated += 1
+            seen_company_names.add(name_key)
+            continue
         seen_company_names.add(name_key)
         if not args.apply:
             continue
         if args.limit and created + updated >= args.limit:
             continue
-        company = normalize_company_row(convert_row(raw), 35.681236, 139.767125)
-        company["business_category"] = "real_estate"
-        company["source_type"] = "mlit_takken"
-        company["source_updated_at"] = SOURCE_UPDATED_AT
-        company["source_url"] = "https://etsuran2.mlit.go.jp/TAKKEN/"
+        company = build_company(raw)
         contact = normalize_contact_row(raw)
         if not company.get("company_name"):
             skipped += 1
+            continue
+        if isinstance(store, SupabaseStore):
+            bulk_companies.append(company)
+            created += 1
             continue
         _, was_created = store.upsert_company(company, contact)  # type: ignore[union-attr]
         if was_created:
@@ -192,6 +234,8 @@ def main() -> None:
     print(f"duplicate_names_skipped={duplicate_names}")
     print(f"import_candidates={target - excluded - duplicate_names}")
     if args.apply:
+        if isinstance(store, SupabaseStore) and bulk_companies:
+            created, _ = insert_supabase_batches(store, bulk_companies)
         print(f"created={created}")
         print(f"updated={updated}")
         print(f"skipped={skipped}")

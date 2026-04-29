@@ -184,6 +184,9 @@ def normalize_contact_row(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def passes_filters(row: dict[str, Any], filters: dict[str, Any]) -> bool:
+    company_name = clean_text(filters.get("company_name"))
+    if company_name and company_name not in (row.get("company_name") or ""):
+        return False
     for key in ["prefecture", "city", "ward"]:
         value = clean_text(filters.get(key))
         if value and value not in (row.get(key) or ""):
@@ -199,6 +202,20 @@ def passes_filters(row: dict[str, Any], filters: dict[str, Any]) -> bool:
         target = " ".join(str(row.get(k) or "") for k in ["company_name", "address", "tel", "license_no", "permit_no"])
         if keyword.lower() not in target.lower():
             return False
+    exclude_q = clean_text(filters.get("exclude_q"))
+    if exclude_q:
+        target = " ".join(str(row.get(k) or "") for k in ["company_name", "address", "license_no", "permit_no", "representative"])
+        exclude_terms = [term.strip().lower() for term in exclude_q.replace(",", " ").split() if term.strip()]
+        if any(term in target.lower() for term in exclude_terms):
+            return False
+    if clean_text(filters.get("has_tel")) == "1" and not row.get("tel"):
+        return False
+    if clean_text(filters.get("has_contact")) == "1" and not any([row.get("website_url"), row.get("email"), row.get("contact_form_url")]):
+        return False
+    if clean_text(filters.get("has_email")) == "1" and not row.get("email"):
+        return False
+    if clean_text(filters.get("has_form")) == "1" and not row.get("contact_form_url"):
+        return False
     radius = parse_float(filters.get("radius_km"))
     if radius is not None and row.get("distance_km") not in [None, ""]:
         try:

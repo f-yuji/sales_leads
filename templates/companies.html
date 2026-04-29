@@ -9,10 +9,12 @@
 </section>
 
 <form class="filters" method="get">
+  <input name="company_name" placeholder="会社名" value="{{ filters.company_name }}">
   <input name="prefecture" placeholder="都道府県" value="{{ filters.prefecture }}">
   <input name="city" placeholder="市区町村" value="{{ filters.city }}">
   <input name="ward" placeholder="区" value="{{ filters.ward }}">
   <input name="q" placeholder="フリーワード" value="{{ filters.q }}">
+  <input name="exclude_q" placeholder="除外ワード" value="{{ filters.exclude_q }}">
   <select name="radius_km">
     {% for radius in [10, 30, 50, 80] %}
       <option value="{{ radius }}" {% if filters.radius_km == radius|string %}selected{% endif %}>{{ radius }}km</option>
@@ -31,11 +33,15 @@
       <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
     {% endfor %}
   </select>
+  <label class="check"><input type="checkbox" name="has_tel" value="1" {% if filters.has_tel == "1" %}checked{% endif %}>電話あり</label>
+  <label class="check"><input type="checkbox" name="has_contact" value="1" {% if filters.has_contact == "1" %}checked{% endif %}>連絡先あり</label>
+  <label class="check"><input type="checkbox" name="has_email" value="1" {% if filters.has_email == "1" %}checked{% endif %}>メールあり</label>
+  <label class="check"><input type="checkbox" name="has_form" value="1" {% if filters.has_form == "1" %}checked{% endif %}>フォームあり</label>
   <button type="submit">絞り込む</button>
 </form>
 
 <section class="panel">
-  <div class="table-meta">{{ rows|length }} 件表示</div>
+  <div class="table-meta">{{ total_count }} 件中 {{ rows|length }} 件表示{% if total_count > display_limit %} / CSV出力は条件一致全件{% endif %}</div>
   <div class="table-wrap">
     <table class="companies">
       <thead>

@@ -317,21 +317,19 @@ class SupabaseStore:
         return None
 
     def list_companies(self, filters: dict[str, Any] | None = None, limit: int = 500) -> list[dict[str, Any]]:
-        result = self.client.table("companies").select("*").order("imported_at", desc=True).limit(limit).execute()
-        companies = result.data or []
+        companies = self._list_company_rows(limit)
         company_ids = [row["id"] for row in companies]
-        contacts: dict[str, dict[str, Any]] = {}
-        statuses: dict[str, dict[str, Any]] = {}
-        if company_ids:
-            contact_result = self.client.table("company_contacts").select("*").in_("company_id", company_ids).execute()
-            status_result = self.client.table("sales_status").select("*").in_("company_id", company_ids).execute()
-            contacts = {row["company_id"]: row for row in contact_result.data or []}
-            statuses = {row["company_id"]: row for row in status_result.data or []}
+        contacts = self._list_related_rows("company_contacts", company_ids)
+        statuses = self._list_related_rows("sales_status", company_ids)
         rows = []
         for company in companies:
             company_id = company["id"]
-            merged = {**company, **contacts.get(company_id, {})}
+            contact = {k: v for k, v in contacts.get(company_id, {}).items() if k not in ["id", "company_id"]}
+            merged = {**company, **contact}
             status = statuses.get(company_id, {})
+            merged["company_id"] = company_id
+            merged["contact_id"] = contacts.get(company_id, {}).get("id")
+            merged["sales_status_id"] = status.get("id")
             merged["status"] = status.get("status", "未対応")
             merged["last_contacted_at"] = status.get("last_contacted_at")
             merged["next_action_at"] = status.get("next_action_at")
@@ -339,6 +337,36 @@ class SupabaseStore:
             rows.append(merged)
         if filters:
             rows = [row for row in rows if passes_filters(row, filters)]
+        return rows
+
+    def _list_company_rows(self, limit: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        chunk_size = 1000
+        for start in range(0, limit, chunk_size):
+            end = min(start + chunk_size - 1, limit - 1)
+            result = (
+                self.client.table("companies")
+                .select("*")
+                .order("imported_at", desc=True)
+                .order("id", desc=True)
+                .range(start, end)
+                .execute()
+            )
+            chunk = result.data or []
+            rows.extend(chunk)
+            if len(chunk) < chunk_size:
+                break
+        return rows
+
+    def _list_related_rows(self, table: str, company_ids: list[str]) -> dict[str, dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        chunk_size = 500
+        for start in range(0, len(company_ids), chunk_size):
+            chunk_ids = company_ids[start:start + chunk_size]
+            if not chunk_ids:
+                continue
+            result = self.client.table(table).select("*").in_("company_id", chunk_ids).execute()
+            rows.update({row["company_id"]: row for row in result.data or []})
         return rows
 
     def update_status(self, company_id: str, status: str, memo: str | None, next_action_at: str | None) -> None:
