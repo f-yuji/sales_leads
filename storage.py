@@ -12,6 +12,10 @@ from services import SALES_STATUSES, now_iso, passes_filters
 
 load_dotenv()
 
+for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+    if os.getenv(proxy_var) == "http://127.0.0.1:9":
+        os.environ.pop(proxy_var, None)
+
 COMPANY_COLUMNS = [
     "company_name",
     "business_category",
