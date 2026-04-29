@@ -221,6 +221,40 @@ class SQLiteStore:
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             sort_column, sort_desc = SORT_OPTIONS.get(sort, SORT_OPTIONS["imported_desc"])
+            clauses: list[str] = []
+            params: list[Any] = []
+            if filters:
+                if filters.get("company_name"):
+                    clauses.append("c.company_name LIKE ?")
+                    params.append(f"%{filters['company_name']}%")
+                if filters.get("prefecture"):
+                    clauses.append("c.prefecture LIKE ?")
+                    params.append(f"%{filters['prefecture']}%")
+                if filters.get("city"):
+                    clauses.append("c.city LIKE ?")
+                    params.append(f"%{filters['city']}%")
+                if filters.get("ward"):
+                    clauses.append("c.ward LIKE ?")
+                    params.append(f"%{filters['ward']}%")
+                if filters.get("business_category") and filters["business_category"] != "all":
+                    clauses.append("c.business_category = ?")
+                    params.append(filters["business_category"])
+                if filters.get("status") and filters["status"] != "all":
+                    clauses.append("coalesce(ss.status, '未対応') = ?")
+                    params.append(filters["status"])
+                if filters.get("has_tel") == "1":
+                    clauses.append("c.tel IS NOT NULL AND c.tel != ''")
+                if filters.get("has_email") == "1":
+                    clauses.append("cc.email IS NOT NULL AND cc.email != ''")
+                if filters.get("has_form") == "1":
+                    clauses.append("cc.contact_form_url IS NOT NULL AND cc.contact_form_url != ''")
+                if filters.get("has_contact") == "1":
+                    clauses.append("(cc.website_url IS NOT NULL OR cc.email IS NOT NULL OR cc.contact_form_url IS NOT NULL)")
+                if filters.get("q"):
+                    like = f"%{filters['q']}%"
+                    clauses.append("(c.company_name LIKE ? OR c.address LIKE ? OR c.tel LIKE ? OR c.license_no LIKE ? OR c.permit_no LIKE ?)")
+                    params.extend([like, like, like, like, like])
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
             rows = conn.execute(
                 f"""
                 select c.*, cc.website_url, cc.email, cc.contact_form_url, cc.confidence,
@@ -228,15 +262,18 @@ class SQLiteStore:
                 from companies c
                 left join company_contacts cc on cc.company_id = c.id
                 left join sales_status ss on ss.company_id = c.id
+                {where}
                 order by c.{sort_column} {'desc' if sort_desc else 'asc'}, c.id desc
-                limit ?
-                offset ?
+                limit ? offset ?
                 """,
-                (limit, offset),
+                params + [limit, offset],
             ).fetchall()
         data = [dict(row) for row in rows]
+        # exclude_q と radius_km だけ Python で処理
         if filters:
-            data = [row for row in data if passes_filters(row, filters)]
+            py_filters = {k: filters[k] for k in ("exclude_q", "radius_km") if filters.get(k)}
+            if py_filters:
+                data = [r for r in data if passes_filters(r, py_filters)]
         return data
 
     def update_status(self, company_id: str, status: str, memo: str | None, next_action_at: str | None) -> None:
@@ -387,7 +424,12 @@ class SupabaseStore:
         offset: int = 0,
         sort: str = "imported_desc",
     ) -> list[dict[str, Any]]:
-        companies = self._list_company_rows(limit, offset, sort)
+        # related-table filters → ID set を先に取る
+        allowed_ids = self._resolve_related_ids(filters) if filters else None
+        if allowed_ids is not None and len(allowed_ids) == 0:
+            return []
+
+        companies = self._list_company_rows(limit, offset, sort, filters=filters, allowed_ids=allowed_ids)
         company_ids = [row["id"] for row in companies]
         contacts = self._list_related_rows("company_contacts", company_ids)
         statuses = self._list_related_rows("sales_status", company_ids)
@@ -405,21 +447,68 @@ class SupabaseStore:
             merged["next_action_at"] = status.get("next_action_at")
             merged["sales_memo"] = status.get("memo")
             rows.append(merged)
+        # exclude_q と radius_km だけ Python で処理
         if filters:
-            rows = [row for row in rows if passes_filters(row, filters)]
+            py_filters = {k: filters[k] for k in ("exclude_q", "radius_km") if filters.get(k)}
+            if py_filters:
+                rows = [r for r in rows if passes_filters(r, py_filters)]
         return rows
 
-    def _list_company_rows(self, limit: int, offset: int = 0, sort: str = "imported_desc") -> list[dict[str, Any]]:
+    def _resolve_related_ids(self, filters: dict[str, Any]) -> set | None:
+        """status / has_email / has_form など関連テーブルのフィルタを ID セットに変換"""
+        id_sets: list[set] = []
+        if filters.get("status") and filters["status"] != "all":
+            r = self.client.table("sales_status").select("company_id").eq("status", filters["status"]).execute()
+            id_sets.append({row["company_id"] for row in r.data or []})
+        if filters.get("has_email") == "1":
+            r = self.client.table("company_contacts").select("company_id").not_.is_("email", "null").execute()
+            id_sets.append({row["company_id"] for row in r.data or []})
+        if filters.get("has_form") == "1":
+            r = self.client.table("company_contacts").select("company_id").not_.is_("contact_form_url", "null").execute()
+            id_sets.append({row["company_id"] for row in r.data or []})
+        if filters.get("has_contact") == "1":
+            r = self.client.table("company_contacts").select("company_id").execute()
+            id_sets.append({row["company_id"] for row in r.data or []})
+        if not id_sets:
+            return None
+        result = id_sets[0]
+        for s in id_sets[1:]:
+            result = result & s
+        return result
+
+    def _list_company_rows(self, limit: int, offset: int = 0, sort: str = "imported_desc", filters: dict[str, Any] | None = None, allowed_ids: set | None = None) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         sort_column, sort_desc = SORT_OPTIONS.get(sort, SORT_OPTIONS["imported_desc"])
         if sort_column == "established_at" and not self.established_sort_available:
             sort_column, sort_desc = SORT_OPTIONS["imported_desc"]
+
+        query = self.client.table("companies").select("*")
+
+        if allowed_ids is not None:
+            query = query.in_("id", list(allowed_ids))
+
+        if filters:
+            if filters.get("company_name"):
+                query = query.ilike("company_name", f"%{filters['company_name']}%")
+            if filters.get("prefecture"):
+                query = query.ilike("prefecture", f"%{filters['prefecture']}%")
+            if filters.get("city"):
+                query = query.ilike("city", f"%{filters['city']}%")
+            if filters.get("ward"):
+                query = query.ilike("ward", f"%{filters['ward']}%")
+            if filters.get("business_category") and filters["business_category"] != "all":
+                query = query.eq("business_category", filters["business_category"])
+            if filters.get("has_tel") == "1":
+                query = query.not_.is_("tel", "null")
+            if filters.get("q"):
+                q = filters["q"]
+                query = query.or_(f"company_name.ilike.%{q}%,address.ilike.%{q}%,tel.ilike.%{q}%,license_no.ilike.%{q}%,permit_no.ilike.%{q}%")
+
         chunk_size = 1000
         for start in range(offset, offset + limit, chunk_size):
             end = min(start + chunk_size - 1, offset + limit - 1)
             result = (
-                self.client.table("companies")
-                .select("*")
+                query
                 .order(sort_column, desc=sort_desc)
                 .order("id", desc=True)
                 .range(start, end)
