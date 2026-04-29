@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>CSV取込</h1>
+    <p>東京駅を初期中心に、緯度経度がある行は距離を計算します。</p>
+  </div>
+</section>
+
+<form class="panel form-grid" method="post" enctype="multipart/form-data">
+  <label>
+    CSVファイル
+    <input type="file" name="csv_file" accept=".csv" required>
+  </label>
+  <label>
+    中心緯度
+    <input type="number" step="0.000001" name="center_lat" value="{{ default_lat }}">
+  </label>
+  <label>
+    中心経度
+    <input type="number" step="0.000001" name="center_lon" value="{{ default_lon }}">
+  </label>
+  <div class="actions">
+    <button type="submit">取り込む</button>
+    <a class="button ghost" href="{{ url_for('sample_csv') }}">サンプルCSV</a>
+  </div>
+</form>
+
+<section class="panel">
+  <h2>初期対応項目</h2>
+  <p>会社名、住所、電話、免許番号、許可番号、公式サイト、メール、問い合わせフォームをCSVから補完できます。</p>
+</section>
+{% endblock %}

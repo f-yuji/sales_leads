@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>会社一覧</h1>
+    <p>地域・半径・業種・営業ステータスで絞り込みます。</p>
+  </div>
+  <a class="button" href="{{ url_for('export_csv', **filters) }}">CSV出力</a>
+</section>
+
+<form class="filters" method="get">
+  <input name="prefecture" placeholder="都道府県" value="{{ filters.prefecture }}">
+  <input name="city" placeholder="市区町村" value="{{ filters.city }}">
+  <input name="ward" placeholder="区" value="{{ filters.ward }}">
+  <input name="q" placeholder="フリーワード" value="{{ filters.q }}">
+  <select name="radius_km">
+    {% for radius in [10, 30, 50, 80] %}
+      <option value="{{ radius }}" {% if filters.radius_km == radius|string %}selected{% endif %}>{{ radius }}km</option>
+    {% endfor %}
+    <option value="" {% if not filters.radius_km %}selected{% endif %}>半径指定なし</option>
+  </select>
+  <select name="business_category">
+    <option value="all">全業種</option>
+    {% for category in categories %}
+      <option value="{{ category }}" {% if filters.business_category == category %}selected{% endif %}>{{ category }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="all">全ステータス</option>
+    {% for status in statuses %}
+      <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">絞り込む</button>
+</form>
+
+<section class="panel">
+  <div class="table-meta">{{ rows|length }} 件表示</div>
+  <div class="table-wrap">
+    <table class="companies">
+      <thead>
+        <tr>
+          <th>会社</th>
+          <th>連絡先</th>
+          <th>所在地</th>
+          <th>距離</th>
+          <th>営業ステータス</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <strong>{{ row.company_name }}</strong>
+              <span>{{ row.business_category }} / {{ row.source_type }}</span>
+              <span>{{ row.license_no or row.permit_no or "" }}</span>
+            </td>
+            <td>
+              <span>{{ row.tel or "" }}</span>
+              {% if row.website_url %}<a href="{{ row.website_url }}" target="_blank" rel="noreferrer">公式サイト</a>{% endif %}
+              {% if row.email %}<a href="mailto:{{ row.email }}">{{ row.email }}</a>{% endif %}
+              {% if row.contact_form_url %}<a href="{{ row.contact_form_url }}" target="_blank" rel="noreferrer">問い合わせフォーム</a>{% endif %}
+            </td>
+            <td>
+              <span>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</span>
+              <span>{{ row.address or "" }}</span>
+            </td>
+            <td>{% if row.distance_km is not none %}{{ row.distance_km }} km{% endif %}</td>
+            <td>
+              <form class="status-form" method="post" action="{{ url_for('update_company_status', company_id=row.id) }}">
+                <select name="status">
+                  {% for status in statuses %}
+                    <option value="{{ status }}" {% if (row.status or "未対応") == status %}selected{% endif %}>{{ status }}</option>
+                  {% endfor %}
+                </select>
+                <input type="date" name="next_action_at" value="{{ row.next_action_at or '' }}">
+                <input type="text" name="memo" placeholder="メモ" value="{{ row.sales_memo or '' }}">
+                <button type="submit">保存</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">条件に合う会社がありません。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
