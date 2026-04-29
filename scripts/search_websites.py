@@ -29,6 +29,10 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+    if os.getenv(proxy_var) == "http://127.0.0.1:9":
+        os.environ.pop(proxy_var, None)
+
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -40,6 +44,7 @@ SKIP_DOMAINS = [
     "suumo.jp", "athome.co.jp", "homes.co.jp", "chintai.net",
     "reins.or.jp", "takken.or.jp",
     "ekiten.jp", "itp.ne.jp", "mapion.co.jp", "navitime.co.jp",
+    "24u.jp", "jpon.xyz", "tel-no.com", "denwabangou.net",
     "hotpepper.jp", "tabelog.com", "gurunavi.com",
     "wikipedia.org", "wikidata.org",
     "facebook.com", "twitter.com", "x.com", "instagram.com",
@@ -102,7 +107,6 @@ def search_brave(query: str) -> list[str]:
             "q": query,
             "count": 10,
             "country": "jp",
-            "search_lang": "ja",
         },
         timeout=15,
     )
