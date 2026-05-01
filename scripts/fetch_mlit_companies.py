@@ -22,6 +22,8 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services import normalize_company_row, normalize_license_row
@@ -32,6 +34,7 @@ CENTER_LAT = 35.681236
 CENTER_LON = 139.767125
 SLEEP_SEC = 0.7
 MAX_PAGES = 2000
+REQUEST_TIMEOUT = (10, 90)
 
 PREF_CODES: dict[str, str] = {
     "北海道": "01", "青森県": "02", "岩手県": "03", "宮城県": "04",
@@ -167,6 +170,19 @@ def parse_address(address: str) -> tuple[str, str, str]:
 
 def make_session() -> requests.Session:
     s = requests.Session()
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=2,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET", "POST"),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
     s.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -316,9 +332,12 @@ def run_fetch(
 
     # 初期フォーム取得
     try:
-        r0 = session.get(config["url"], timeout=20)
+        r0 = session.get(config["url"], timeout=REQUEST_TIMEOUT)
+        r0.raise_for_status()
         soup0 = BeautifulSoup(decode_response(r0), "html.parser")
         form_data = build_form_data(soup0)
+        if not form_data:
+            raise RuntimeError("search form was not found")
     except Exception as e:
         result.error = f"初期フォーム取得失敗: {e}"
         return result
@@ -346,10 +365,16 @@ def run_fetch(
                 "CMD": "next",
                 "dispPage": str(page),
             })
+        req_data.update({
+            "kenCode": pref_code,
+            "choice": "1",
+            "dispCount": "50",
+        })
         req_data.update(config["extra_params"])
 
         try:
-            resp = session.post(config["url"], data=req_data, timeout=30)
+            resp = session.post(config["url"], data=req_data, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
             content = decode_response(resp)
             soup = BeautifulSoup(content, "html.parser")
         except Exception as e:
@@ -379,6 +404,10 @@ def run_fetch(
         for tr in data_rows:
             row = parse_row(tr, config, source_name)
             if not row:
+                result.skipped += 1
+                continue
+            if row.get("prefecture") and row.get("prefecture") != pref_name:
+                log(f"  SKIP prefecture mismatch: expected={pref_name} got={row.get('prefecture')} {row.get('company_name')}")
                 result.skipped += 1
                 continue
 

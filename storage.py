@@ -8,7 +8,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from services import SALES_STATUSES, now_iso, passes_filters
+from services import SALES_STATUSES, format_jst_datetime, now_iso, passes_filters
 
 load_dotenv()
 
@@ -619,7 +619,7 @@ class SQLiteStore:
                 group by coalesce(ss.status, '未対応')
                 """
             ).fetchall()
-        last_updated = (agg["last_updated"] or "")[:16]
+        last_updated = format_jst_datetime(agg["last_updated"])
         status_counts = {r["status"]: r["cnt"] for r in status_rows}
         return {
             "db_name": self.db_path.name,
@@ -652,7 +652,7 @@ class SQLiteStore:
             "email_rate": round(email_count / total * 100, 1) if total else 0,
             "form_rate": round(form_count / total * 100, 1) if total else 0,
             "reply_rate": round(replied / sent * 100, 1) if sent else 0,
-            "last_updated": max((r.get("last_checked_at") or r.get("imported_at") for r in rows if r.get("last_checked_at") or r.get("imported_at")), default="-"),
+            "last_updated": format_jst_datetime(max((r.get("last_checked_at") or r.get("imported_at") for r in rows if r.get("last_checked_at") or r.get("imported_at")), default="")),
         }
 
     def export_csv(self, path: Path, filters: dict[str, Any] | None = None) -> int:
@@ -985,7 +985,7 @@ class SupabaseStore:
             r = self.client.table("sales_status").select("*", count="exact").eq("status", status).limit(0).execute()
             status_counts[status] = r.count or 0
         last_res = self.client.table("companies").select("imported_at").order("imported_at", desc=True).limit(1).execute()
-        last_updated = (last_res.data[0].get("imported_at") or "")[:16] if last_res.data else ""
+        last_updated = format_jst_datetime(last_res.data[0].get("imported_at")) if last_res.data else ""
         return {
             "db_name": "sales.db",
             "total": total,
@@ -1007,7 +1007,7 @@ class SupabaseStore:
         sent = status_counts.get("送信済み", 0)
         replied = status_counts.get("返信あり", 0)
         last_res = self.client.table("companies").select("imported_at").order("imported_at", desc=True).limit(1).execute()
-        last_updated = (last_res.data[0].get("imported_at") or "")[:16] if last_res.data else "-"
+        last_updated = format_jst_datetime(last_res.data[0].get("imported_at")) if last_res.data else "-"
         return {
             "total": total,
             "email_count": email_count,

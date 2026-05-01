@@ -3,11 +3,12 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 TOKYO_STATION_LAT = 35.681236
 TOKYO_STATION_LON = 139.767125
+JST = timezone(timedelta(hours=9))
 
 BUSINESS_CATEGORIES = [
     "real_estate",
@@ -124,6 +125,19 @@ _CORP_PATTERN = re.compile(
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def format_jst_datetime(value: Any) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text[:16]
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(JST).strftime("%Y-%m-%d %H:%M")
 
 
 def clean_text(value: Any) -> str | None:
