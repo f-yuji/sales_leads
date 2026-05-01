@@ -110,7 +110,7 @@
           {% set lts = (row.license_types or '').split(',') | select | list %}
           <tr {% if not row.is_active %}style="opacity:0.5"{% endif %}>
             <td>
-              <a href="{{ url_for('company_detail', company_id=row.id) }}" class="strong row-link">{{ row.company_name }}</a>
+              <a href="{{ url_for('company_detail', company_id=row.id) }}" class="strong row-link">{{ (row.company_name or '').replace('　※', '').replace('※', '') }}</a>
               <span class="sub">{{ category_labels.get(row.primary_business_category, row.primary_business_category) }} · {{ row.source_type }}</span>
               <div class="badge-row">
                 {% for lt in lts %}

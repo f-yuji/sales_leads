@@ -330,6 +330,37 @@ def parse_row(tr: Tag, config: dict, source_name: str) -> dict | None:
     return row
 
 
+def _load_existing_source_ids(store, source_type: str) -> set[str]:
+    """DBに登録済みの source_record_id を一括取得する（--create-only 用）"""
+    from storage import SQLiteStore, SupabaseStore
+    if isinstance(store, SQLiteStore):
+        with store.connect() as conn:
+            rows = conn.execute(
+                "SELECT source_record_id FROM companies WHERE source_type = ? AND source_record_id IS NOT NULL",
+                (source_type,)
+            ).fetchall()
+        return {r["source_record_id"] for r in rows}
+    elif isinstance(store, SupabaseStore):
+        existing: set[str] = set()
+        offset = 0
+        while True:
+            res = (
+                store.client.table("companies")
+                .select("source_record_id")
+                .eq("source_type", source_type)
+                .not_.is_("source_record_id", "null")
+                .range(offset, offset + 999)
+                .execute()
+            )
+            batch = res.data or []
+            existing.update(r["source_record_id"] for r in batch if r.get("source_record_id"))
+            if len(batch) < 1000:
+                break
+            offset += 1000
+        return existing
+    return set()
+
+
 def run_fetch(
     category: str,
     prefecture: str,
@@ -338,6 +369,7 @@ def run_fetch(
     start_page: int = 1,
     resume: bool = False,
     mark_missing: bool = False,
+    create_only: bool = False,
     verbose: bool = True,
 ) -> FetchResult:
     if category not in CATEGORY_CONFIG:
@@ -374,6 +406,12 @@ def run_fetch(
     except Exception as e:
         result.error = f"初期フォーム取得失敗: {e}"
         return result
+
+    existing_ids: set[str] = set()
+    if apply and create_only:
+        log("既存 source_record_id を取得中...")
+        existing_ids = _load_existing_source_ids(store, config["source_type"])
+        log(f"  既存 {len(existing_ids):,} 件をスキップ対象に設定")
 
     touched_ids: list = []
     start_page = max(1, start_page)
@@ -476,6 +514,9 @@ def run_fetch(
             if limit and (result.created + result.updated) >= limit:
                 break
 
+            if create_only and row.get("source_record_id") in existing_ids:
+                continue
+
             try:
                 company = normalize_company_row(row, CENTER_LAT, CENTER_LON)
                 license_data = normalize_license_row(row)
@@ -486,8 +527,23 @@ def run_fetch(
                 else:
                     result.updated += 1
             except Exception as e:
-                log(f"  ERROR upsert {row.get('company_name')}: {e}", )
-                result.skipped += 1
+                if "ConnectionTerminated" in str(e) or "ConnectionNotAvailable" in str(e):
+                    # Supabase HTTP/2 接続リセット → store を再生成してリトライ
+                    time.sleep(2)
+                    store = create_store()
+                    try:
+                        company_id, was_created = store.upsert_company(company, license=license_data)
+                        touched_ids.append(company_id)
+                        if was_created:
+                            result.created += 1
+                        else:
+                            result.updated += 1
+                    except Exception as e2:
+                        log(f"  ERROR upsert retry {row.get('company_name')}: {e2}")
+                        result.skipped += 1
+                else:
+                    log(f"  ERROR upsert {row.get('company_name')}: {e}")
+                    result.skipped += 1
 
         result.pages += 1
 
@@ -598,6 +654,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0, help="最大取込件数（テスト用）")
     parser.add_argument("--start-page", type=int, default=1, help="再開するページ番号")
     parser.add_argument("--resume", action="store_true", help="進捗ファイルから自動再開する")
+    parser.add_argument("--create-only", action="store_true",
+                        help="DBに未登録の新規レコードだけ保存する（既存はスキップ）")
     parser.add_argument("--mark-missing", action="store_true",
                         help="今回取得できなかった既存レコードを needs_review=true にする")
     args = parser.parse_args()
@@ -610,6 +668,7 @@ def main() -> None:
         start_page=args.start_page,
         resume=args.resume,
         mark_missing=args.mark_missing,
+        create_only=args.create_only,
         verbose=True,
     )
 

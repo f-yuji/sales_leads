@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -213,6 +215,7 @@ def import_csv() -> str | Response:
         default_lon=TOKYO_STATION_LON,
         categories=BUSINESS_CATEGORIES,
         sources=SOURCE_TYPES,
+        active_log=bool(session.get("fetch_log")),
     )
 
 
@@ -345,6 +348,22 @@ def sample_csv() -> Response:
     return send_file(Path("data/sample_companies.csv"), as_attachment=True, download_name="sample_companies.csv", mimetype="text/csv")
 
 
+FETCH_LOG_DIR = Path("data/fetch_logs")
+
+
+def _tee_subprocess(proc: subprocess.Popen, log_path: Path) -> None:
+    """subprocess の stdout をターミナルとログファイルの両方に書き出す"""
+    with open(log_path, "wb") as lf:
+        for line in iter(proc.stdout.readline, b""):
+            try:
+                sys.stdout.buffer.write(line)
+                sys.stdout.flush()
+            except Exception:
+                pass
+            lf.write(line)
+            lf.flush()
+
+
 @app.post("/admin/fetch-mlit")
 def fetch_mlit() -> Response:
     category = request.form.get("category", "takken")
@@ -356,21 +375,50 @@ def fetch_mlit() -> Response:
         return redirect(url_for("import_csv"))
 
     script = Path(__file__).parent / "scripts" / "fetch_mlit_companies.py"
-    cmd = [sys.executable, str(script), "--category", category, "--prefecture", prefecture, "--apply"]
+    cmd = [sys.executable, "-u", str(script), "--category", category, "--prefecture", prefecture, "--apply"]
     if mark_missing:
         cmd.append("--mark-missing")
 
+    FETCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_name = f"mlit_{category}_{prefecture}_{int(time.time())}.log"
+    log_path = FETCH_LOG_DIR / log_name
+
     try:
-        subprocess.Popen(cmd, cwd=str(Path(__file__).parent))
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=str(Path(__file__).parent),
+        )
+        t = threading.Thread(target=_tee_subprocess, args=(proc, log_path), daemon=True)
+        t.start()
+        session["fetch_log"] = str(log_path)
         flash(
             f"国交省データ取得を開始しました（{category} / {prefecture}）。"
-            "完了まで数分かかります。しばらく後に会社一覧を確認してください。",
+            "下のログで進捗を確認できます。",
             "ok",
         )
     except Exception as e:
         flash(f"起動に失敗しました: {e}", "error")
 
     return redirect(url_for("import_csv"))
+
+
+@app.get("/admin/fetch-mlit/log")
+def fetch_mlit_log():
+    log_path_str = session.get("fetch_log")
+    if not log_path_str:
+        return {"lines": [], "done": True}
+    log_path = Path(log_path_str)
+    if not log_path.exists():
+        return {"lines": [], "done": False}
+    try:
+        text = log_path.read_bytes().decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        done = "=== 結果 ===" in text
+        return {"lines": lines[-300:], "done": done}
+    except Exception:
+        return {"lines": [], "done": False}
 
 
 @app.get("/health")

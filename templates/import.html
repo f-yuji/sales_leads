@@ -90,4 +90,42 @@
     </dl>
   </div>
 </div>
+{% if active_log %}
+<div class="panel" id="log-panel">
+  <div class="panel-head">
+    <h2>取得ログ</h2>
+    <span class="right mono" id="log-status" style="font-size:0.8rem">接続中...</span>
+  </div>
+  <div class="panel-body" style="padding:0">
+    <pre id="log-output" style="margin:0;padding:0.75rem 1rem;background:#111;color:#ccc;font-size:0.7rem;line-height:1.5;height:360px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">（ログ取得中）</pre>
+  </div>
+</div>
+<script>
+(function(){
+  var out = document.getElementById('log-output');
+  var status = document.getElementById('log-status');
+  var done = false;
+  function poll(){
+    if(done) return;
+    fetch('/admin/fetch-mlit/log')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d.lines && d.lines.length){
+          out.textContent = d.lines.join('\n');
+          out.scrollTop = out.scrollHeight;
+          status.textContent = d.lines.length + ' 行';
+        }
+        if(d.done){
+          done = true;
+          status.textContent = '完了 ✓';
+          clearInterval(timer);
+        }
+      })
+      .catch(function(){});
+  }
+  poll();
+  var timer = setInterval(poll, 2000);
+})();
+</script>
+{% endif %}
 {% endblock %}

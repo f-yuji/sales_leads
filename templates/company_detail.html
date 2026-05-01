@@ -8,7 +8,7 @@
       <h1>会社を手動追加</h1>
       <div class="sub">source_type = manual で新規登録します。</div>
     {% else %}
-      <h1>{{ company.company_name }}</h1>
+      <h1>{{ (company.company_name or '').replace('　※', '').replace('※', '') }}{% if company.company_name and '※' in company.company_name %}<span class="badge-emelt" title="eMELTでデジタル閲覧可能">eMELT</span>{% endif %}</h1>
       <div class="sub">ID {{ company.id }} · {{ company.source_type }}{% if company.source_name %} / {{ company.source_name }}{% endif %}</div>
     {% endif %}
   </div>
@@ -246,6 +246,7 @@
 {% endif %}
 
 <style>
+.badge-emelt { font-size: 0.6rem; padding: 2px 6px; border-radius: 3px; background: #1a3a2a; color: #4ec9b0; font-weight: 700; vertical-align: middle; margin-left: 0.5rem; letter-spacing: 0.03em; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1.25rem; }
 .form-grid .full { grid-column: 1 / -1; }
 .form-label { display: block; font-size: 0.72rem; color: #888; margin-bottom: 3px; }
