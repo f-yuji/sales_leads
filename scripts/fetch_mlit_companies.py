@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import time
@@ -36,6 +37,7 @@ SLEEP_SEC = 0.7
 MAX_PAGES = 2000
 REQUEST_TIMEOUT = (10, 90)
 EMPTY_PAGE_RETRIES = 3
+PROGRESS_DIR = Path("data/import_progress")
 
 PREF_CODES: dict[str, str] = {
     "北海道": "01", "青森県": "02", "岩手県": "03", "宮城県": "04",
@@ -118,6 +120,27 @@ class FetchResult:
         if self.error:
             lines.append(f"エラー: {self.error}")
         return "\n".join(lines)
+
+
+def progress_path(category: str, pref_name: str) -> Path:
+    safe_pref = re.sub(r"[^0-9A-Za-z一-龥ぁ-んァ-ヶー_-]+", "_", pref_name)
+    return PROGRESS_DIR / f"mlit_{category}_{safe_pref}.json"
+
+
+def load_progress(category: str, pref_name: str) -> dict:
+    path = progress_path(category, pref_name)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_progress(category: str, pref_name: str, data: dict) -> None:
+    PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
+    path = progress_path(category, pref_name)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def resolve_pref_code(prefecture: str) -> str:
@@ -313,6 +336,7 @@ def run_fetch(
     apply: bool = False,
     limit: int = 0,
     start_page: int = 1,
+    resume: bool = False,
     mark_missing: bool = False,
     verbose: bool = True,
 ) -> FetchResult:
@@ -331,6 +355,13 @@ def run_fetch(
     def log(msg: str) -> None:
         if verbose:
             print(msg, flush=True)
+
+    progress = load_progress(category, pref_name) if resume else {}
+    if resume and progress.get("last_successful_page"):
+        start_page = max(start_page, int(progress["last_successful_page"]) + 1)
+        log(f"進捗ファイルから再開します: page {start_page} ({progress_path(category, pref_name)})")
+    elif resume:
+        log(f"進捗ファイルがないため page {start_page} から開始します: {progress_path(category, pref_name)}")
 
     # 初期フォーム取得
     try:
@@ -460,6 +491,20 @@ def run_fetch(
 
         result.pages += 1
 
+        if apply and page >= start_page:
+            save_progress(category, pref_name, {
+                "category": category,
+                "prefecture": pref_name,
+                "last_successful_page": page,
+                "next_page": page + 1,
+                "total_pages": result.total_pages,
+                "result_count": result.result_count,
+                "created": result.created,
+                "updated": result.updated,
+                "skipped": result.skipped,
+                "updated_at": date.today().isoformat(),
+            })
+
         if result.pages % 20 == 0:
             log(f"  {page}/{result.total_pages}ページ完了  新規:{result.created} 更新:{result.updated}")
 
@@ -472,6 +517,20 @@ def run_fetch(
             break
 
         if page >= result.total_pages:
+            if apply and result.total_pages:
+                save_progress(category, pref_name, {
+                    "category": category,
+                    "prefecture": pref_name,
+                    "last_successful_page": page,
+                    "next_page": None,
+                    "total_pages": result.total_pages,
+                    "result_count": result.result_count,
+                    "created": result.created,
+                    "updated": result.updated,
+                    "skipped": result.skipped,
+                    "completed": True,
+                    "updated_at": date.today().isoformat(),
+                })
             break
 
         page += 1
@@ -538,6 +597,7 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true", help="DB に書き込む（省略時は dry-run）")
     parser.add_argument("--limit", type=int, default=0, help="最大取込件数（テスト用）")
     parser.add_argument("--start-page", type=int, default=1, help="再開するページ番号")
+    parser.add_argument("--resume", action="store_true", help="進捗ファイルから自動再開する")
     parser.add_argument("--mark-missing", action="store_true",
                         help="今回取得できなかった既存レコードを needs_review=true にする")
     args = parser.parse_args()
@@ -548,6 +608,7 @@ def main() -> None:
         apply=args.apply,
         limit=args.limit,
         start_page=args.start_page,
+        resume=args.resume,
         mark_missing=args.mark_missing,
         verbose=True,
     )
