@@ -4,9 +4,11 @@ import csv
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 import os
 
+from dotenv import load_dotenv
 from flask import Flask, Response, flash, redirect, render_template, request, send_file, session, url_for
 
 from services import (
@@ -27,19 +29,24 @@ from services import (
 )
 from storage import create_store
 
+load_dotenv(override=True)
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "local-sales-leads-dev")
+app.secret_key = os.environ.get("SECRET_KEY") or "local-sales-leads-dev"
 store = create_store()
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
 PUBLIC_ENDPOINTS = {"login", "static"}
+LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 
 
 @app.before_request
 def require_login() -> Response | None:
     if not APP_PASSWORD:
-        return None
+        if request.host.split(":", 1)[0] in LOCAL_HOSTS:
+            return None
+        return Response("APP_PASSWORD is not configured.", status=503)
     if request.endpoint in PUBLIC_ENDPOINTS:
         return None
     if session.get("authed"):
@@ -101,6 +108,19 @@ def current_filters() -> dict:
         "license_types": license_types,
         "show_inactive": g("show_inactive"),
     }
+
+
+def build_query_url(endpoint: str, params: dict) -> str:
+    cleaned: dict[str, object] = {}
+    for key, value in params.items():
+        if key == "license_types":
+            if value:
+                cleaned[key] = value
+        elif value:
+            cleaned[key] = value
+    query = urlencode(cleaned, doseq=True)
+    base = url_for(endpoint)
+    return f"{base}?{query}" if query else base
 
 
 def _extract_company_fields(form) -> dict:
@@ -203,6 +223,9 @@ def companies() -> str:
     per_page = parse_positive_int(request.args.get("per_page"), 100, 500)
     offset = (page - 1) * per_page
     rows = store.list_companies(filters=filters, limit=per_page, offset=offset, sort=filters["sort"])
+    export_args = dict(filters)
+    prev_args = {**filters, "page": page - 1, "per_page": per_page}
+    next_args = {**filters, "page": page + 1, "per_page": per_page}
     return render_template(
         "companies.html",
         rows=rows,
@@ -210,6 +233,9 @@ def companies() -> str:
         per_page=per_page,
         has_prev=page > 1,
         has_next=len(rows) == per_page,
+        export_url=build_query_url("export_csv", export_args),
+        prev_url=build_query_url("companies", prev_args),
+        next_url=build_query_url("companies", next_args),
         established_sort_available=getattr(store, "established_sort_available", True),
         filters=filters,
         categories=BUSINESS_CATEGORIES,
@@ -247,8 +273,8 @@ def company_new_post() -> Response:
     return redirect(url_for("companies"))
 
 
-@app.get("/companies/<int:company_id>")
-def company_detail(company_id: int) -> str | Response:
+@app.get("/companies/<company_id>")
+def company_detail(company_id: str) -> str | Response:
     company = store.get_company(company_id)
     if not company:
         flash("会社が見つかりません。", "error")
@@ -266,8 +292,8 @@ def company_detail(company_id: int) -> str | Response:
     )
 
 
-@app.post("/companies/<int:company_id>")
-def company_update(company_id: int) -> Response:
+@app.post("/companies/<company_id>")
+def company_update(company_id: str) -> Response:
     if not store.get_company(company_id):
         flash("会社が見つかりません。", "error")
         return redirect(url_for("companies"))
@@ -280,7 +306,7 @@ def company_update(company_id: int) -> Response:
     status = request.form.get("status")
     if status and status in SALES_STATUSES:
         store.update_status(
-            str(company_id),
+            company_id,
             status,
             request.form.get("sales_memo") or None,
             request.form.get("next_action_at") or None,

@@ -8,7 +8,7 @@
   </div>
   <div style="display:flex;gap:0.5rem">
     <a class="btn ghost" href="{{ url_for('company_new') }}">＋ 手動追加</a>
-    <a class="btn" href="{{ url_for('export_csv', **{k: v for k, v in filters.items() if v and k != 'license_types'}) }}"><svg><use href="#i-import"/></svg>CSV出力</a>
+    <a class="btn" href="{{ export_url }}"><svg><use href="#i-import"/></svg>CSV出力</a>
   </div>
 </section>
 
@@ -88,12 +88,8 @@
   <div class="list-bar">
     <div class="meta"><b>{{ page }}</b> ページ目 / <b>{{ rows|length }}</b> 件表示</div>
     <div class="pager">
-      {% set prev_args = filters.copy() %}
-      {% set _ = prev_args.update({"page": page - 1, "per_page": per_page}) %}
-      {% set next_args = filters.copy() %}
-      {% set _ = next_args.update({"page": page + 1, "per_page": per_page}) %}
-      {% if has_prev %}<a href="{{ url_for('companies', **{k: v for k, v in prev_args.items() if v and k != 'license_types'}) }}{% for lt in (prev_args.license_types or []) %}&license_types={{ lt }}{% endfor %}"><button>‹ 前へ</button></a>{% else %}<button disabled>‹ 前へ</button>{% endif %}
-      {% if has_next %}<a href="{{ url_for('companies', **{k: v for k, v in next_args.items() if v and k != 'license_types'}) }}{% for lt in (next_args.license_types or []) %}&license_types={{ lt }}{% endfor %}"><button>次へ ›</button></a>{% else %}<button disabled>次へ ›</button>{% endif %}
+      {% if has_prev %}<a href="{{ prev_url }}"><button>‹ 前へ</button></a>{% else %}<button disabled>‹ 前へ</button>{% endif %}
+      {% if has_next %}<a href="{{ next_url }}"><button>次へ ›</button></a>{% else %}<button disabled>次へ ›</button>{% endif %}
     </div>
   </div>
   <div class="tbl-wrap">
