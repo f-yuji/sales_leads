@@ -35,6 +35,7 @@ CENTER_LON = 139.767125
 SLEEP_SEC = 0.7
 MAX_PAGES = 2000
 REQUEST_TIMEOUT = (10, 90)
+EMPTY_PAGE_RETRIES = 3
 
 PREF_CODES: dict[str, str] = {
     "北海道": "01", "青森県": "02", "岩手県": "03", "宮城県": "04",
@@ -311,6 +312,7 @@ def run_fetch(
     prefecture: str,
     apply: bool = False,
     limit: int = 0,
+    start_page: int = 1,
     mark_missing: bool = False,
     verbose: bool = True,
 ) -> FetchResult:
@@ -343,6 +345,7 @@ def run_fetch(
         return result
 
     touched_ids: list = []
+    start_page = max(1, start_page)
     page = 1
 
     while page <= MAX_PAGES:
@@ -391,16 +394,34 @@ def run_fetch(
         if page == 1:
             result.total_pages = int(form_data.get("pageCount", "0") or "0")
             result.result_count = int(form_data.get("resultCount", "0") or "0")
-            log(f"\n[{category}] {pref_name}: {result.result_count:,}件 / {result.total_pages}ページ")
+            if start_page > 1:
+                log(f"\n[{category}] {pref_name}: {result.result_count:,}件 / {result.total_pages}ページ (page {start_page} まで保存スキップ)")
+            else:
+                log(f"\n[{category}] {pref_name}: {result.result_count:,}件 / {result.total_pages}ページ")
             if result.total_pages == 0:
-                log("  → 結果なし")
+                result.error = "検索結果ページを取得できませんでした（国交省側が0件/空ページを返しました）"
+                log(f"  ERROR: {result.error}")
                 break
 
         data_rows = extract_data_rows(soup)
+        empty_retries = 0
+        while not data_rows and page > 1 and empty_retries < EMPTY_PAGE_RETRIES:
+            empty_retries += 1
+            wait_sec = empty_retries * 3
+            log(f"  page {page}: データ行なし、{wait_sec}秒後に再試行 ({empty_retries}/{EMPTY_PAGE_RETRIES})")
+            time.sleep(wait_sec)
+            try:
+                resp = session.post(config["url"], data=req_data, timeout=REQUEST_TIMEOUT)
+                resp.raise_for_status()
+                content = decode_response(resp)
+                soup = BeautifulSoup(content, "html.parser")
+                data_rows = extract_data_rows(soup)
+            except Exception as e:
+                log(f"  ERROR retry page {page}: {e}")
+
         if not data_rows and page > 1:
             log(f"  page {page}: データ行なし、終了")
             break
-
         for tr in data_rows:
             row = parse_row(tr, config, source_name)
             if not row:
@@ -409,6 +430,8 @@ def run_fetch(
             if row.get("prefecture") and row.get("prefecture") != pref_name:
                 log(f"  SKIP prefecture mismatch: expected={pref_name} got={row.get('prefecture')} {row.get('company_name')}")
                 result.skipped += 1
+                continue
+            if page < start_page:
                 continue
 
             result.total_fetched += 1
@@ -514,6 +537,7 @@ def main() -> None:
     parser.add_argument("--prefecture", required=True, help="都道府県名 例: 神奈川県 / 東京都")
     parser.add_argument("--apply", action="store_true", help="DB に書き込む（省略時は dry-run）")
     parser.add_argument("--limit", type=int, default=0, help="最大取込件数（テスト用）")
+    parser.add_argument("--start-page", type=int, default=1, help="再開するページ番号")
     parser.add_argument("--mark-missing", action="store_true",
                         help="今回取得できなかった既存レコードを needs_review=true にする")
     args = parser.parse_args()
@@ -523,6 +547,7 @@ def main() -> None:
         prefecture=args.prefecture,
         apply=args.apply,
         limit=args.limit,
+        start_page=args.start_page,
         mark_missing=args.mark_missing,
         verbose=True,
     )
