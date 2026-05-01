@@ -1,29 +1,59 @@
 from __future__ import annotations
 
 import csv
+import subprocess
+import sys
 from pathlib import Path
 
-from flask import Flask, Response, flash, redirect, render_template, request, send_file, url_for
+import os
+
+from flask import Flask, Response, flash, redirect, render_template, request, send_file, session, url_for
 
 from services import (
     BUSINESS_CATEGORIES,
+    BUSINESS_CATEGORY_LABELS,
+    LICENSE_TYPES,
+    LICENSE_TYPE_LABELS,
     SALES_STATUSES,
     SOURCE_TYPES,
     TOKYO_STATION_LAT,
     TOKYO_STATION_LON,
+    normalize_company_name,
     normalize_company_row,
     normalize_contact_row,
+    normalize_license_row,
+    normalize_phone,
+    now_iso,
 )
 from storage import create_store
 
 app = Flask(__name__)
-app.secret_key = "local-sales-leads-dev"
+app.secret_key = os.environ.get("SECRET_KEY", "local-sales-leads-dev")
 store = create_store()
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+
+PUBLIC_ENDPOINTS = {"login", "static"}
+
+
+@app.before_request
+def require_login() -> Response | None:
+    if not APP_PASSWORD:
+        return None
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if session.get("authed"):
+        return None
+    return redirect(url_for("login", next=request.path))
 
 
 @app.context_processor
 def inject_sidebar():
-    return {"sidebar": store.sidebar_stats()}
+    return {
+        "sidebar": store.sidebar_stats(),
+        "category_labels": BUSINESS_CATEGORY_LABELS,
+        "license_type_labels": LICENSE_TYPE_LABELS,
+    }
 
 
 def parse_positive_int(value: str | None, default: int, maximum: int) -> int:
@@ -47,23 +77,82 @@ def read_csv_upload(file_storage) -> list[dict[str, str]]:
     return list(csv.DictReader(text.splitlines()))
 
 
-def current_filters() -> dict[str, str]:
+def current_filters() -> dict:
+    def g(key, default=""):
+        return request.args.get(key, default).strip()
+
+    license_types = [lt for lt in request.args.getlist("license_types") if lt]
     return {
-        "company_name": request.args.get("company_name", "").strip(),
-        "prefecture": request.args.get("prefecture", "").strip(),
-        "city": request.args.get("city", "").strip(),
-        "ward": request.args.get("ward", "").strip(),
-        "q": request.args.get("q", "").strip(),
-        "exclude_q": request.args.get("exclude_q", "").strip(),
-        "has_tel": request.args.get("has_tel", "").strip(),
-        "has_contact": request.args.get("has_contact", "").strip(),
-        "has_email": request.args.get("has_email", "").strip(),
-        "has_form": request.args.get("has_form", "").strip(),
-        "radius_km": request.args.get("radius_km", "50").strip(),
-        "business_category": request.args.get("business_category", "all").strip(),
-        "status": request.args.get("status", "all").strip(),
-        "sort": request.args.get("sort", "imported_desc").strip(),
+        "company_name": g("company_name"),
+        "prefecture": g("prefecture"),
+        "city": g("city"),
+        "ward": g("ward"),
+        "q": g("q"),
+        "exclude_q": g("exclude_q"),
+        "has_tel": g("has_tel"),
+        "has_website": g("has_website"),
+        "has_contact": g("has_contact"),
+        "has_email": g("has_email"),
+        "has_form": g("has_form"),
+        "radius_km": g("radius_km", "50"),
+        "primary_business_category": g("primary_business_category", "all"),
+        "status": g("status", "all"),
+        "sort": g("sort", "imported_desc"),
+        "license_types": license_types,
+        "show_inactive": g("show_inactive"),
     }
+
+
+def _extract_company_fields(form) -> dict:
+    def v(key):
+        return form.get(key, "").strip() or None
+    company_name = v("company_name")
+    return {
+        "company_name": company_name,
+        "company_name_normalized": normalize_company_name(company_name),
+        "corporate_number": v("corporate_number"),
+        "primary_business_category": v("primary_business_category") or "unknown",
+        "source_type": v("source_type") or "manual",
+        "source_name": v("source_name"),
+        "source_record_id": v("source_record_id"),
+        "source_url": v("source_url"),
+        "prefecture": v("prefecture"),
+        "city": v("city"),
+        "ward": v("ward"),
+        "address": v("address"),
+        "tel": normalize_phone(v("tel")),
+        "representative": v("representative"),
+        "is_active": 1 if form.get("is_active") else 0,
+        "needs_review": 1 if form.get("needs_review") else 0,
+    }
+
+
+def _extract_contact_fields(form) -> dict:
+    def v(key):
+        return form.get(key, "").strip() or None
+    return {
+        "website_url": v("website_url"),
+        "email": v("email"),
+        "contact_form_url": v("contact_form_url"),
+        "checked_at": now_iso(),
+        "is_valid": 1,
+    }
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login() -> str | Response:
+    if request.method == "POST":
+        if request.form.get("password") == APP_PASSWORD:
+            session["authed"] = True
+            return redirect(request.args.get("next") or url_for("dashboard"))
+        flash("パスワードが違います。", "error")
+    return render_template("login.html")
+
+
+@app.get("/logout")
+def logout() -> Response:
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.get("/")
@@ -83,16 +172,15 @@ def import_csv() -> str | Response:
         center_lat = float(request.form.get("center_lat") or TOKYO_STATION_LAT)
         center_lon = float(request.form.get("center_lon") or TOKYO_STATION_LON)
         rows = read_csv_upload(uploaded)
-        created = 0
-        updated = 0
-        skipped = 0
+        created = updated = skipped = 0
         for raw in rows:
             company = normalize_company_row(raw, center_lat, center_lon)
+            license_data = normalize_license_row(raw)
             contact = normalize_contact_row(raw)
             if not company.get("company_name"):
                 skipped += 1
                 continue
-            _, was_created = store.upsert_company(company, contact)
+            _, was_created = store.upsert_company(company, license=license_data, contact=contact)
             if was_created:
                 created += 1
             else:
@@ -126,7 +214,79 @@ def companies() -> str:
         filters=filters,
         categories=BUSINESS_CATEGORIES,
         statuses=SALES_STATUSES,
+        license_types=LICENSE_TYPES,
     )
+
+
+@app.get("/companies/new")
+def company_new() -> str:
+    return render_template(
+        "company_detail.html",
+        company=None,
+        logs=[],
+        categories=BUSINESS_CATEGORIES,
+        source_types=SOURCE_TYPES,
+        statuses=SALES_STATUSES,
+        license_types=LICENSE_TYPES,
+        is_new=True,
+    )
+
+
+@app.post("/companies/new")
+def company_new_post() -> Response:
+    fields = _extract_company_fields(request.form)
+    if not fields.get("company_name"):
+        flash("会社名は必須です。", "error")
+        return redirect(url_for("company_new"))
+    ts = now_iso()
+    company = {**fields, "imported_at": ts, "last_seen_at": ts, "created_at": ts, "updated_at": ts}
+    contact = _extract_contact_fields(request.form)
+    contact_data = contact if any(v for k, v in contact.items() if k not in ("checked_at", "is_valid") and v) else None
+    _, was_created = store.upsert_company(company, license=None, contact=contact_data)
+    flash("会社を追加しました。" if was_created else "既存レコードを更新しました。", "ok")
+    return redirect(url_for("companies"))
+
+
+@app.get("/companies/<int:company_id>")
+def company_detail(company_id: int) -> str | Response:
+    company = store.get_company(company_id)
+    if not company:
+        flash("会社が見つかりません。", "error")
+        return redirect(url_for("companies"))
+    logs = store.get_update_logs(company_id)
+    return render_template(
+        "company_detail.html",
+        company=company,
+        logs=logs,
+        categories=BUSINESS_CATEGORIES,
+        source_types=SOURCE_TYPES,
+        statuses=SALES_STATUSES,
+        license_types=LICENSE_TYPES,
+        is_new=False,
+    )
+
+
+@app.post("/companies/<int:company_id>")
+def company_update(company_id: int) -> Response:
+    if not store.get_company(company_id):
+        flash("会社が見つかりません。", "error")
+        return redirect(url_for("companies"))
+    fields = _extract_company_fields(request.form)
+    update_note = request.form.get("change_reason", "").strip() or None
+    store.update_company(company_id, fields, updated_by="user", update_note=update_note)
+    contact = _extract_contact_fields(request.form)
+    if any(v for k, v in contact.items() if k not in ("checked_at", "is_valid") and v):
+        store.update_contact(company_id, contact)
+    status = request.form.get("status")
+    if status and status in SALES_STATUSES:
+        store.update_status(
+            str(company_id),
+            status,
+            request.form.get("sales_memo") or None,
+            request.form.get("next_action_at") or None,
+        )
+    flash("会社情報を更新しました。", "ok")
+    return redirect(url_for("company_detail", company_id=company_id))
 
 
 @app.post("/companies/<company_id>/status")
@@ -157,6 +317,34 @@ def export_csv() -> Response:
 @app.get("/sample-csv")
 def sample_csv() -> Response:
     return send_file(Path("data/sample_companies.csv"), as_attachment=True, download_name="sample_companies.csv", mimetype="text/csv")
+
+
+@app.post("/admin/fetch-mlit")
+def fetch_mlit() -> Response:
+    category = request.form.get("category", "takken")
+    prefecture = request.form.get("prefecture", "").strip()
+    mark_missing = bool(request.form.get("mark_missing"))
+
+    if not prefecture:
+        flash("都道府県を入力してください。", "error")
+        return redirect(url_for("import_csv"))
+
+    script = Path(__file__).parent / "scripts" / "fetch_mlit_companies.py"
+    cmd = [sys.executable, str(script), "--category", category, "--prefecture", prefecture, "--apply"]
+    if mark_missing:
+        cmd.append("--mark-missing")
+
+    try:
+        subprocess.Popen(cmd, cwd=str(Path(__file__).parent))
+        flash(
+            f"国交省データ取得を開始しました（{category} / {prefecture}）。"
+            "完了まで数分かかります。しばらく後に会社一覧を確認してください。",
+            "ok",
+        )
+    except Exception as e:
+        flash(f"起動に失敗しました: {e}", "error")
+
+    return redirect(url_for("import_csv"))
 
 
 @app.get("/health")

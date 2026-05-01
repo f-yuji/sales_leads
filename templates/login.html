@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>営業先DB — ログイン</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-box { width: 320px; display: flex; flex-direction: column; gap: 16px; }
+    .login-box h1 { font-size: 1.1rem; margin: 0; }
+    .login-box input[type=password] { width: 100%; box-sizing: border-box; }
+    .login-box .btn { width: 100%; justify-content: center; }
+  </style>
+</head>
+<body>
+<div class="login-box">
+  <h1>営業先DB</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="message {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+  <form method="post">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input type="password" name="password" placeholder="パスワード" autofocus>
+      <button type="submit" class="btn">ログイン</button>
+    </div>
+  </form>
+</div>
+</body>
+</html>

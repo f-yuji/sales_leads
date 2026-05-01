@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% set current = 'companies' %}
+{% block content %}
+
+<section class="page-head">
+  <div>
+    {% if is_new %}
+      <h1>会社を手動追加</h1>
+      <div class="sub">source_type = manual で新規登録します。</div>
+    {% else %}
+      <h1>{{ company.company_name }}</h1>
+      <div class="sub">ID {{ company.id }} · {{ company.source_type }}{% if company.source_name %} / {{ company.source_name }}{% endif %}</div>
+    {% endif %}
+  </div>
+  <a class="btn ghost" href="{{ url_for('companies') }}">← 一覧に戻る</a>
+</section>
+
+{% set action = url_for('company_new_post') if is_new else url_for('company_update', company_id=company.id) %}
+<form method="post" action="{{ action }}">
+
+  {# ---- 基本情報 ---- #}
+  <div class="panel">
+    <div class="panel-head"><h2>基本情報</h2></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label class="full">
+          <span class="form-label">会社名 <span class="req">*</span></span>
+          <input name="company_name" required value="{{ (company.company_name if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">業種</span>
+          <select name="primary_business_category">
+            {% for cat in categories %}
+              <option value="{{ cat }}" {% if (company.primary_business_category if company else '') == cat %}selected{% endif %}>
+                {{ category_labels.get(cat, cat) }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span class="form-label">法人番号</span>
+          <input name="corporate_number" value="{{ (company.corporate_number if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">代表者</span>
+          <input name="representative" value="{{ (company.representative if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">電話番号</span>
+          <input name="tel" value="{{ (company.tel if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">都道府県</span>
+          <input name="prefecture" value="{{ (company.prefecture if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">市区町村</span>
+          <input name="city" value="{{ (company.city if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">区</span>
+          <input name="ward" value="{{ (company.ward if company else '') or '' }}">
+        </label>
+        <label class="full">
+          <span class="form-label">住所（全体）</span>
+          <input name="address" value="{{ (company.address if company else '') or '' }}">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ---- 参照元 ---- #}
+  <div class="panel">
+    <div class="panel-head"><h2>参照元</h2></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label>
+          <span class="form-label">取得元タイプ</span>
+          <select name="source_type">
+            {% for st in source_types %}
+              <option value="{{ st }}" {% if (company.source_type if company else 'manual') == st %}selected{% endif %}>{{ st }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span class="form-label">参照元名</span>
+          <input name="source_name" placeholder="例: kokudo_all_takken_20240806.csv" value="{{ (company.source_name if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">参照元レコードID</span>
+          <input name="source_record_id" placeholder="例: 宅建ID・免許番号" value="{{ (company.source_record_id if company else '') or '' }}">
+        </label>
+        <label class="full">
+          <span class="form-label">参照元URL</span>
+          <input name="source_url" type="url" placeholder="https://..." value="{{ (company.source_url if company else '') or '' }}">
+        </label>
+      </div>
+      {% if company and (company.imported_at or company.last_seen_at) %}
+      <div class="form-meta">
+        {% if company.imported_at %}<span>取込: <span class="mono">{{ company.imported_at[:16] }}</span></span>{% endif %}
+        {% if company.last_seen_at %}<span>最終確認: <span class="mono">{{ company.last_seen_at[:16] }}</span></span>{% endif %}
+        {% if company.last_manual_updated_at %}<span>手動更新: <span class="mono">{{ company.last_manual_updated_at[:16] }}</span>{% if company.manual_updated_by %} by {{ company.manual_updated_by }}{% endif %}</span>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---- 連絡先 ---- #}
+  <div class="panel">
+    <div class="panel-head"><h2>連絡先</h2></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label class="full">
+          <span class="form-label">公式サイトURL</span>
+          <input name="website_url" type="url" placeholder="https://..." value="{{ (company.website_url if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">メールアドレス</span>
+          <input name="email" type="email" value="{{ (company.email if company else '') or '' }}">
+        </label>
+        <label>
+          <span class="form-label">問い合わせフォームURL</span>
+          <input name="contact_form_url" type="url" placeholder="https://..." value="{{ (company.contact_form_url if company else '') or '' }}">
+        </label>
+      </div>
+      {% if company and company.opt_out %}
+      <div style="margin-top:0.5rem;color:#f48771;font-size:0.8rem">⚠ この会社は配信停止（opt_out）が設定されています。</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---- 保有許認可 ---- #}
+  {% if not is_new and company.licenses %}
+  <div class="panel">
+    <div class="panel-head"><h2>保有許認可・登録</h2><span class="right">{{ company.licenses|length }} 件</span></div>
+    <div class="panel-body flush">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>種別</th>
+            <th>免許・許可番号</th>
+            <th>行政庁</th>
+            <th>事務所種別</th>
+            <th>参照元</th>
+            <th>最終確認</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lic in company.licenses %}
+          <tr {% if not lic.is_active %}style="opacity:0.4"{% endif %}>
+            <td><span class="badge-license badge-{{ lic.license_type }}">{{ license_type_labels.get(lic.license_type, lic.license_type) }}</span></td>
+            <td class="mono">{{ lic.license_no or lic.permit_no or lic.registration_no or '—' }}</td>
+            <td class="sub">{{ lic.authority or '—' }}</td>
+            <td class="sub">{{ lic.office_type or '—' }}</td>
+            <td class="sub">{{ lic.source_type }}{% if lic.source_name %} / {{ lic.source_name }}{% endif %}</td>
+            <td class="mono sub">{{ (lic.last_seen_at or '')[:10] or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 営業ステータス ---- #}
+  {% if not is_new %}
+  <div class="panel">
+    <div class="panel-head"><h2>営業ステータス</h2></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label>
+          <span class="form-label">ステータス</span>
+          <select name="status">
+            {% for st in statuses %}
+              <option value="{{ st }}" {% if (company.status or '未対応') == st %}selected{% endif %}>{{ st }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span class="form-label">次アクション日</span>
+          <input type="date" name="next_action_at" value="{{ company.next_action_at or '' }}">
+        </label>
+        <label class="full">
+          <span class="form-label">営業メモ</span>
+          <textarea name="sales_memo" rows="2">{{ company.sales_memo or '' }}</textarea>
+        </label>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 管理 ---- #}
+  <div class="panel">
+    <div class="panel-head"><h2>管理</h2></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label class="full check-row">
+          <label class="check">
+            <input type="checkbox" name="is_active" value="1" {% if company is none or company.is_active %}checked{% endif %}>
+            有効
+          </label>
+          <label class="check">
+            <input type="checkbox" name="needs_review" value="1" {% if company and company.needs_review %}checked{% endif %}>
+            要確認
+          </label>
+        </label>
+        <label class="full">
+          <span class="form-label">更新メモ（変更理由）</span>
+          <input name="change_reason" placeholder="例: 電話番号が変わった / 移転の可能性あり">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <a class="btn ghost" href="{{ url_for('companies') }}">キャンセル</a>
+    <button type="submit" class="btn">{{ '追加する' if is_new else '保存する' }}</button>
+  </div>
+
+</form>
+
+{# ---- 更新履歴 ---- #}
+{% if not is_new and logs %}
+<div class="panel" style="margin-top:1.5rem">
+  <div class="panel-head"><h2>更新履歴</h2><span class="right">{{ logs|length }} 件</span></div>
+  <div class="panel-body flush">
+    <table class="data">
+      <thead>
+        <tr><th>日時</th><th>フィールド</th><th>変更前</th><th>変更後</th><th>更新者</th><th>メモ</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="mono">{{ log.created_at[:16] if log.created_at else '' }}</td>
+          <td>{{ log.field_name or '' }}</td>
+          <td class="sub">{{ log.old_value or '—' }}</td>
+          <td>{{ log.new_value or '—' }}</td>
+          <td class="sub">{{ log.updated_by or '' }}</td>
+          <td class="sub">{{ log.update_note or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1.25rem; }
+.form-grid .full { grid-column: 1 / -1; }
+.form-label { display: block; font-size: 0.72rem; color: #888; margin-bottom: 3px; }
+.form-label .req { color: #f48771; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; box-sizing: border-box; }
+.form-meta { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 0.75rem; color: #777; }
+.form-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
+.check-row { display: flex; gap: 1.5rem; align-items: center; }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: 1; } }
+</style>
+{% endblock %}

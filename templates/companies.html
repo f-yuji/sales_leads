@@ -6,7 +6,10 @@
     <h1>会社一覧</h1>
     <div class="sub">条件で絞り込み、1ページずつ確認します。</div>
   </div>
-  <a class="btn" href="{{ url_for('export_csv', **filters) }}"><svg><use href="#i-import"/></svg>CSV出力</a>
+  <div style="display:flex;gap:0.5rem">
+    <a class="btn ghost" href="{{ url_for('company_new') }}">＋ 手動追加</a>
+    <a class="btn" href="{{ url_for('export_csv', **{k: v for k, v in filters.items() if v and k != 'license_types'}) }}"><svg><use href="#i-import"/></svg>CSV出力</a>
+  </div>
 </section>
 
 <form class="panel" id="filter-panel" method="get">
@@ -29,10 +32,12 @@
         {% endfor %}
         <option value="" {% if not filters.radius_km %}selected{% endif %}>半径指定なし</option>
       </select>
-      <select name="business_category">
+      <select name="primary_business_category">
         <option value="all">全業種</option>
         {% for category in categories %}
-          <option value="{{ category }}" {% if filters.business_category == category %}selected{% endif %}>{{ category }}</option>
+          <option value="{{ category }}" {% if filters.primary_business_category == category %}selected{% endif %}>
+            {{ category_labels.get(category, category) }}
+          </option>
         {% endfor %}
       </select>
       <select name="status">
@@ -45,8 +50,8 @@
         <option value="imported_desc" {% if filters.sort == "imported_desc" %}selected{% endif %}>取込が新しい順</option>
         <option value="name_asc" {% if filters.sort == "name_asc" %}selected{% endif %}>会社名 50音順</option>
         <option value="name_desc" {% if filters.sort == "name_desc" %}selected{% endif %}>会社名 逆順</option>
-        <option value="established_asc" {% if filters.sort == "established_asc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業 古い順{% if not established_sort_available %}（SQL追加後）{% endif %}</option>
-        <option value="established_desc" {% if filters.sort == "established_desc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業 新しい順{% if not established_sort_available %}（SQL追加後）{% endif %}</option>
+        <option value="established_asc" {% if filters.sort == "established_asc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業 古い順{% if not established_sort_available %}（未対応）{% endif %}</option>
+        <option value="established_desc" {% if filters.sort == "established_desc" %}selected{% endif %} {% if not established_sort_available %}disabled{% endif %}>創業 新しい順{% if not established_sort_available %}（未対応）{% endif %}</option>
       </select>
       <select name="per_page">
         {% for size in [50, 100, 200, 500] %}
@@ -55,9 +60,21 @@
       </select>
 
       <label class="check"><input type="checkbox" name="has_tel" value="1" {% if filters.has_tel == "1" %}checked{% endif %}>電話あり</label>
+      <label class="check"><input type="checkbox" name="has_website" value="1" {% if filters.has_website == "1" %}checked{% endif %}>URLあり</label>
       <label class="check"><input type="checkbox" name="has_contact" value="1" {% if filters.has_contact == "1" %}checked{% endif %}>連絡先あり</label>
       <label class="check"><input type="checkbox" name="has_email" value="1" {% if filters.has_email == "1" %}checked{% endif %}>メールあり</label>
       <label class="check"><input type="checkbox" name="has_form" value="1" {% if filters.has_form == "1" %}checked{% endif %}>フォームあり</label>
+      <label class="check"><input type="checkbox" name="show_inactive" value="1" {% if filters.show_inactive == "1" %}checked{% endif %}>無効も表示</label>
+
+      <div class="license-filter">
+        <span class="filter-label">保有許認可：</span>
+        {% for lt in license_types %}
+          <label class="check">
+            <input type="checkbox" name="license_types" value="{{ lt }}" {% if lt in (filters.license_types or []) %}checked{% endif %}>
+            {{ license_type_labels.get(lt, lt) }}
+          </label>
+        {% endfor %}
+      </div>
 
       <div class="row-actions">
         <a class="btn ghost" href="{{ url_for('companies') }}">クリア</a>
@@ -75,8 +92,8 @@
       {% set _ = prev_args.update({"page": page - 1, "per_page": per_page}) %}
       {% set next_args = filters.copy() %}
       {% set _ = next_args.update({"page": page + 1, "per_page": per_page}) %}
-      {% if has_prev %}<a href="{{ url_for('companies', **prev_args) }}"><button>‹ 前へ</button></a>{% else %}<button disabled>‹ 前へ</button>{% endif %}
-      {% if has_next %}<a href="{{ url_for('companies', **next_args) }}"><button>次へ ›</button></a>{% else %}<button disabled>次へ ›</button>{% endif %}
+      {% if has_prev %}<a href="{{ url_for('companies', **{k: v for k, v in prev_args.items() if v and k != 'license_types'}) }}{% for lt in (prev_args.license_types or []) %}&license_types={{ lt }}{% endfor %}"><button>‹ 前へ</button></a>{% else %}<button disabled>‹ 前へ</button>{% endif %}
+      {% if has_next %}<a href="{{ url_for('companies', **{k: v for k, v in next_args.items() if v and k != 'license_types'}) }}{% for lt in (next_args.license_types or []) %}&license_types={{ lt }}{% endfor %}"><button>次へ ›</button></a>{% else %}<button disabled>次へ ›</button>{% endif %}
     </div>
   </div>
   <div class="tbl-wrap">
@@ -94,17 +111,24 @@
         {% for row in rows %}
           {% set st = row.status or '未対応' %}
           {% set meta = status_meta.get(st, {'cls': 'b-untouched'}) %}
-          <tr>
+          {% set lts = (row.license_types or '').split(',') | select | list %}
+          <tr {% if not row.is_active %}style="opacity:0.5"{% endif %}>
             <td>
-              <span class="strong">{{ row.company_name }}</span>
-              <span class="sub">{{ row.business_category }} · {{ row.source_type }}</span>
-              {% if row.license_no or row.permit_no %}<span class="sub mono">{{ row.license_no or row.permit_no }}</span>{% endif %}
+              <a href="{{ url_for('company_detail', company_id=row.id) }}" class="strong row-link">{{ row.company_name }}</a>
+              <span class="sub">{{ category_labels.get(row.primary_business_category, row.primary_business_category) }} · {{ row.source_type }}</span>
+              <div class="badge-row">
+                {% for lt in lts %}
+                  <span class="badge-license badge-{{ lt }}">{{ license_type_labels.get(lt, lt) }}</span>
+                {% endfor %}
+                {% if row.needs_review %}<span class="badge-review">要確認</span>{% endif %}
+                {% if row.opt_out %}<span class="badge-optout">配信停止</span>{% endif %}
+              </div>
             </td>
             <td>
               {% if row.tel %}<span class="mono">{{ row.tel }}</span>{% endif %}
               {% if row.email %}<a href="mailto:{{ row.email }}">{{ row.email }}</a>{% endif %}
               {% if row.website_url %}<a href="{{ row.website_url }}" target="_blank" rel="noreferrer">公式サイト ↗</a>{% endif %}
-              {% if row.contact_form_url %}<a href="{{ row.contact_form_url }}" target="_blank" rel="noreferrer">問い合わせフォーム ↗</a>{% endif %}
+              {% if row.contact_form_url %}<a href="{{ row.contact_form_url }}" target="_blank" rel="noreferrer">フォーム ↗</a>{% endif %}
             </td>
             <td>
               <span>{{ row.prefecture or "" }}{{ row.city or "" }}{% if row.ward and row.ward != row.city %}{{ row.ward }}{% endif %}</span>
@@ -135,4 +159,19 @@
     </table>
   </div>
 </div>
+
+<style>
+.license-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; grid-column: 1 / -1; }
+.filter-label { font-size: 0.75rem; color: #888; white-space: nowrap; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.badge-license { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.badge-takken { background: #264f78; color: #9cdcfe; }
+.badge-construction { background: #3a2a00; color: #dcdcaa; }
+.badge-rental_management { background: #1e3a1e; color: #4ec9b0; }
+.badge-mansion_management { background: #2a1a3a; color: #c586c0; }
+.badge-appraisal, .badge-survey, .badge-consultant { background: #1e2a3a; color: #9cdcfe; }
+.badge-unknown { background: #333; color: #888; }
+.badge-review { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; background: #f48771; color: #fff; font-weight: 600; }
+.badge-optout { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; background: #555; color: #ccc; }
+</style>
 {% endblock %}

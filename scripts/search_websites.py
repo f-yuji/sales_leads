@@ -43,20 +43,37 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 SKIP_DOMAINS = [
+    # 行政・公共
     "mlit.go.jp", ".go.jp", "pref.", "city.", "town.",
+    # 検索エンジン・汎用ポータル
     "google.com", "google.co.jp", "bing.com", "yahoo.co.jp",
+    # 不動産ポータル
     "suumo.jp", "athome.co.jp", "homes.co.jp", "chintai.net",
-    "reins.or.jp", "takken.or.jp",
+    "house.goo.ne.jp", "maisuma.jp", "sumaistar.com", "ielove.co.jp",
+    # 業界団体・免許検索
+    "reins.or.jp", "takken.or.jp", "fudousan.or.jp", "hatomarksite.com",
+    "tfnorenkai.jp", "jeas.org",
+    # 電話番号逆引き・案内
     "ekiten.jp", "itp.ne.jp", "mapion.co.jp", "navitime.co.jp",
     "24u.jp", "jpon.xyz", "tel-no.com", "denwabangou.net", "jpnumber.com",
-    "maisuma.jp", "sumaistar.com", "ielove.co.jp",
+    "ivry.jp", "telnavi.jp",
+    # 法人情報DB（問い合わせ先なし）
+    "alarmbox.jp", "cnavi.g-search.or.jp", "kenbire.jp",
+    "jbn-support.jp", "isms.jp",
+    # タウンページ・職業情報
+    "townpage.goo.ne.jp",
+    # グルメ・飲食
     "hotpepper.jp", "tabelog.com", "gurunavi.com",
+    # 百科事典
     "wikipedia.org", "wikidata.org",
+    # SNS
     "facebook.com", "twitter.com", "x.com", "instagram.com",
     "youtube.com", "linkedin.com",
+    # EC
     "amazon.co.jp", "rakuten.co.jp",
+    # 採用・求人
     "mynavi.jp", "rikunabi.com", "indeed.com",
-    "townwork.net", "hellowork.go.jp",
+    "townwork.net", "hellowork.go.jp", "sai-hataraku.jp",
 ]
 
 LEGAL_SUFFIXES = [

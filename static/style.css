@@ -563,3 +563,24 @@ table.data .empty { color: var(--vsc-fg-muted); text-align: center; padding: 16p
   .status-form input[type="text"]  { grid-column: 1 / -1; }
   .status-form button           { grid-column: 2; align-self: end; }
 }
+
+
+/* 会社行リンク */
+a.row-link { color: inherit; text-decoration: none; display: block; font-weight: 600; }
+a.row-link:hover { color: var(--vsc-accent, #4fc1ff); }
+
+/* 要確認バッジ */
+.badge-review {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f48771;
+  color: #fff;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* 会社詳細フォーム — panel-body padding */
+.panel-body { padding: 1rem 1.25rem; }
+.panel-body.flush { padding: 0; }

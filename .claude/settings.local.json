@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app import app; print\\('OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python scripts/import_takken_csv.py --help)",
+      "WebFetch(domain:etsuran2.mlit.go.jp)",
+      "WebFetch(domain:db.yuiportal.mlit.go.jp)",
+      "WebSearch",
+      "Bash(python -c \"import bs4; print\\('bs4:', bs4.__version__\\)\")",
+      "Bash(python scripts/fetch_mlit_companies.py --category takken --prefecture 神奈川県 --limit 5)"
+    ]
+  }
+}

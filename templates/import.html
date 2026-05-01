@@ -3,13 +3,55 @@
 {% block content %}
 <section class="page-head">
   <div>
-    <h1>CSV取込</h1>
-    <div class="sub">東京駅を初期中心に、緯度経度がある行は距離を計算します。</div>
+    <h1>データ取込</h1>
+    <div class="sub">国交省から直接取得するか、CSVファイルをアップロードします。</div>
   </div>
 </section>
 
+{# ---- 国交省 直接取得 ---- #}
 <div class="panel">
-  <div class="panel-head"><h2>取込設定</h2></div>
+  <div class="panel-head"><h2><svg style="width:14px;height:14px;color:#4fc1ff"><use href="#i-refresh"/></svg>国交省データ直接取得</h2></div>
+  <div class="panel-body">
+    <p style="font-size:0.8rem;color:#888;margin-bottom:0.75rem">
+      国交省のシステム（etsuran2.mlit.go.jp）をスクレイピングして会社情報を取得します。
+      取得完了まで数分〜数十分かかります。バックグラウンドで実行されます。
+    </p>
+    <form method="post" action="{{ url_for('fetch_mlit') }}" class="form-grid">
+      <label>
+        <span class="form-label">業種</span>
+        <select name="category">
+          <option value="takken">宅建業者</option>
+          <option value="construction">建設業者</option>
+          <option value="rental_management">賃貸住宅管理業者</option>
+          <option value="mansion_management">マンション管理業者</option>
+        </select>
+      </label>
+      <label>
+        <span class="form-label">都道府県</span>
+        <input name="prefecture" placeholder="例: 神奈川県 / 東京都 / 埼玉県" list="pref-list" required>
+        <datalist id="pref-list">
+          {% for p in ["東京都","神奈川県","埼玉県","千葉県","大阪府","愛知県","福岡県","北海道","宮城県","広島県"] %}
+            <option value="{{ p }}">
+          {% endfor %}
+        </datalist>
+      </label>
+      <label class="check" style="align-self:flex-end">
+        <input type="checkbox" name="mark_missing" value="1">
+        今回取得できなかった既存レコードに「要確認」を付ける
+      </label>
+      <div class="actions" style="align-self:flex-end">
+        <button type="submit" class="btn"><svg><use href="#i-refresh"/></svg>取得開始</button>
+      </div>
+    </form>
+    <div style="margin-top:0.75rem;font-size:0.75rem;color:#666">
+      <b>注意:</b> 同じ都道府県・業種を連続して実行しないでください。サーバに負荷がかかります（0.7秒間隔で取得します）。
+    </div>
+  </div>
+</div>
+
+{# ---- CSV取込 ---- #}
+<div class="panel">
+  <div class="panel-head"><h2>CSVファイル取込</h2></div>
   <div class="panel-body">
     <form class="form-grid" method="post" enctype="multipart/form-data">
       <label>

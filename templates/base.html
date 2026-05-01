@@ -116,6 +116,7 @@
     {% if sidebar.total is defined %}<div class="seg"><span class="mono">{{ "{:,}".format(sidebar.total) }} 件</span></div>{% endif %}
     <div class="spacer"></div>
     {% if sidebar.last_updated %}<div class="seg"><span class="mono">{{ sidebar.last_updated }}</span></div>{% endif %}
+    <div class="seg"><a href="{{ url_for('logout') }}" style="font-size:0.75rem;opacity:0.5;text-decoration:none">ログアウト</a></div>
   </footer>
 
 </div>
