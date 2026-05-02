@@ -46,20 +46,18 @@ LICENSE_TYPES = [
     "accommodation",
     "appraisal",
     "survey",
-    "consultant",
     "unknown",
 ]
 
 LICENSE_TYPE_LABELS = {
-    "takken": "宅建",
+    "takken": "不動産",
     "construction": "建設",
-    "rental_management": "賃貸管理",
+    "rental_management": "賃貸住宅管理",
     "mansion_management": "マンション管理",
-    "accommodation": "住宅宿泊管理",
-    "appraisal": "鑑定",
-    "survey": "測量",
-    "consultant": "コンサル",
-    "unknown": "その他",
+    "accommodation": "宿泊/民泊管理",
+    "appraisal": "不動産鑑定",
+    "survey": "測量/調査",
+    "unknown": "その他/不明",
 }
 
 SOURCE_TYPES = [

@@ -786,6 +786,9 @@ class SupabaseStore:
         sort: str = "imported_desc",
     ) -> list[dict[str, Any]]:
         allowed_ids = self._resolve_related_ids(filters) if filters else None
+        if filters and filters.get("license_types") and allowed_ids is None:
+            allowed_ids = self._license_company_ids_page(filters["license_types"], offset, limit)
+            offset = 0
         if allowed_ids is not None and len(allowed_ids) == 0:
             return []
 
@@ -818,6 +821,39 @@ class SupabaseStore:
             if py_filters:
                 rows = [r for r in rows if passes_filters(r, py_filters)]
         return rows
+
+    def _license_company_ids_page(self, license_types: list[str], offset: int, limit: int) -> set[str]:
+        wanted = [lt for lt in license_types if lt]
+        if not wanted:
+            return set()
+        ids: list[str] = []
+        seen: set[str] = set()
+        scan_start = 0
+        scan_size = 1000
+        target_count = offset + limit
+        while len(ids) < target_count:
+            result = (
+                self.client.table("company_licenses")
+                .select("company_id")
+                .eq("is_active", True)
+                .in_("license_type", wanted)
+                .range(scan_start, scan_start + scan_size - 1)
+                .execute()
+            )
+            chunk = result.data or []
+            if not chunk:
+                break
+            for row in chunk:
+                cid = row.get("company_id")
+                if cid and cid not in seen:
+                    seen.add(cid)
+                    ids.append(cid)
+                    if len(ids) >= target_count:
+                        break
+            if len(chunk) < scan_size:
+                break
+            scan_start += scan_size
+        return set(ids[offset:offset + limit])
 
     def _list_licenses(self, company_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
         result: dict[str, list[dict]] = {}
@@ -864,7 +900,8 @@ class SupabaseStore:
                     continue
                 r = self.client.table("company_licenses").select("company_id").eq("license_type", lt).eq("is_active", True).execute()
                 ids = {row["company_id"] for row in r.data or []}
-                id_sets.append(ids)
+                if len(ids) <= 200:
+                    id_sets.append(ids)
         if not id_sets:
             return None
         result = id_sets[0]
