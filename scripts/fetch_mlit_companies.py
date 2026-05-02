@@ -88,14 +88,17 @@ CATEGORY_CONFIG: dict[str, dict] = {
         "license_field": "registration_no",
         "extra_params": {},
     },
+    "accommodation": {
+        "url": BASE_URL + "jutakuKensaku.do",
+        "source_type": "mlit_accommodation",
+        "primary_business_category": "accommodation",
+        "license_field": "registration_no",
+        "extra_params": {},
+    },
 }
 
-EXCLUDED_KEYWORDS = {
-    "銀行", "信託銀行", "信用金庫", "信用組合", "労働金庫",
-    "農業協同組合", "漁業協同組合", "協同組合", "証券",
-    "生命保険", "損害保険", "保険", "共済",
-    "独立行政法人", "地方公共団体",
-}
+BRANCH_KEYWORDS = {"支店", "営業所", "出張所"}
+BANK_LIKE_KEYWORDS = {"銀行", "信用金庫", "信金", "信用組合", "労働金庫", "農業協同組合", "漁業協同組合"}
 
 
 @dataclass
@@ -280,8 +283,6 @@ def parse_row(tr: Tag, config: dict, source_name: str) -> dict | None:
     company_name = name_td.get_text(strip=True)
     if not company_name:
         return None
-    if any(kw in company_name for kw in EXCLUDED_KEYWORDS):
-        return None
 
     link = name_td.find("a")
     source_record_id = ""
@@ -306,6 +307,9 @@ def parse_row(tr: Tag, config: dict, source_name: str) -> dict | None:
         if lic_idx > 1:
             authority = tds[lic_idx - 1].get_text(strip=True)
 
+    is_branch = any(kw in company_name for kw in BRANCH_KEYWORDS)
+    is_bank_like = any(kw in company_name for kw in BANK_LIKE_KEYWORDS)
+
     row: dict = {
         "company_name": company_name,
         "address": address,
@@ -320,6 +324,8 @@ def parse_row(tr: Tag, config: dict, source_name: str) -> dict | None:
         "source_name": source_name,
         "source_url": config["url"],
         "primary_business_category": config["primary_business_category"],
+        "is_branch": is_branch,
+        "is_bank_like": is_bank_like,
     }
 
     if license_td:
@@ -426,7 +432,7 @@ def run_fetch(
             req_data.update({
                 "CMD": "search",
                 "kenCode": pref_code,
-                "choice": "1",  # 本店のみ
+                "choice": "",  # 本店・支店すべて
                 "dispCount": "50",
                 "dispPage": "1",
                 "resultCount": "0",
@@ -439,7 +445,7 @@ def run_fetch(
             })
         req_data.update({
             "kenCode": pref_code,
-            "choice": "1",
+            "choice": "",
             "dispCount": "50",
         })
         req_data.update(config["extra_params"])
@@ -639,6 +645,48 @@ def _mark_missing(store, touched_ids: list, source_type: str, source_name: str) 
             print("未検出レコードなし")
 
 
+SERVER_ERROR_STRINGS = ("504", "408", "503", "502", "Timeout", "timeout", "Time-out", "timed out", "Max retries", "ConnectionError", "初期フォーム取得失敗")
+
+
+def _is_server_error(error: str | None) -> bool:
+    return bool(error and any(s in error for s in SERVER_ERROR_STRINGS))
+
+
+def run_fetch_with_retry(
+    category: str,
+    prefecture: str,
+    apply: bool,
+    limit: int,
+    start_page: int,
+    resume: bool,
+    mark_missing: bool,
+    create_only: bool,
+    verbose: bool,
+    max_retries: int = 5,
+    retry_wait_sec: int = 300,
+) -> FetchResult:
+    for attempt in range(1, max_retries + 1):
+        result = run_fetch(
+            category=category,
+            prefecture=prefecture,
+            apply=apply,
+            limit=limit,
+            start_page=start_page,
+            resume=resume,
+            mark_missing=mark_missing,
+            create_only=create_only,
+            verbose=verbose,
+        )
+        if not _is_server_error(result.error):
+            return result
+        wait = retry_wait_sec * attempt
+        print(f"\n  [{prefecture}] サーバーエラー: {result.error}")
+        print(f"  {wait // 60}分後に再試行します... ({attempt}/{max_retries})")
+        time.sleep(wait)
+    print(f"\n  [{prefecture}] {max_retries}回リトライしましたが失敗しました。スキップします。")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="国交省 etsuran2 から会社データをスクレイピングして DB に保存する"
@@ -649,7 +697,9 @@ def main() -> None:
         choices=list(CATEGORY_CONFIG),
         help="業種: takken / construction / rental_management / mansion_management",
     )
-    parser.add_argument("--prefecture", required=True, help="都道府県名 例: 神奈川県 / 東京都")
+    pref_group = parser.add_mutually_exclusive_group(required=True)
+    pref_group.add_argument("--prefecture", help="都道府県名 例: 神奈川県 / 東京都")
+    pref_group.add_argument("--prefectures", nargs="+", help="複数都道府県を順番に取得 例: 東京都 神奈川県 埼玉県")
     parser.add_argument("--apply", action="store_true", help="DB に書き込む（省略時は dry-run）")
     parser.add_argument("--limit", type=int, default=0, help="最大取込件数（テスト用）")
     parser.add_argument("--start-page", type=int, default=1, help="再開するページ番号")
@@ -658,22 +708,34 @@ def main() -> None:
                         help="DBに未登録の新規レコードだけ保存する（既存はスキップ）")
     parser.add_argument("--mark-missing", action="store_true",
                         help="今回取得できなかった既存レコードを needs_review=true にする")
+    parser.add_argument("--retry-wait", type=int, default=300,
+                        help="サーバーエラー時のリトライ待機秒数（デフォルト300秒=5分）")
     args = parser.parse_args()
 
-    result = run_fetch(
-        category=args.category,
-        prefecture=args.prefecture,
-        apply=args.apply,
-        limit=args.limit,
-        start_page=args.start_page,
-        resume=args.resume,
-        mark_missing=args.mark_missing,
-        create_only=args.create_only,
-        verbose=True,
-    )
+    prefectures = args.prefectures if args.prefectures else [args.prefecture]
 
-    print(f"\n=== 結果 ===")
-    print(result.summary())
+    for i, pref in enumerate(prefectures, 1):
+        if len(prefectures) > 1:
+            print(f"\n{'='*40}")
+            print(f"[{i}/{len(prefectures)}] {pref} を取得中...")
+            print(f"{'='*40}")
+
+        result = run_fetch_with_retry(
+            category=args.category,
+            prefecture=pref,
+            apply=args.apply,
+            limit=args.limit,
+            start_page=args.start_page if i == 1 else 1,
+            resume=args.resume,
+            mark_missing=args.mark_missing,
+            create_only=args.create_only,
+            verbose=True,
+            retry_wait_sec=args.retry_wait,
+        )
+
+        print(f"\n=== 結果 ===")
+        print(result.summary())
+
     if not args.apply:
         print("\n（dry-run: --apply を付けると実際に書き込みます）")
 

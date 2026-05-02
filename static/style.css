@@ -462,6 +462,7 @@ table.data .empty { color: var(--vsc-fg-muted); text-align: center; padding: 16p
   min-height: 24px;
 }
 .status-form button {
+  justify-content: center;
   background: var(--acc-dark);
   color: #fff;
   border: 0;

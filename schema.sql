@@ -29,6 +29,8 @@ create table if not exists companies (
     manual_updated_by text,
     is_active boolean not null default true,
     needs_review boolean not null default false,
+    is_branch boolean not null default false,
+    is_bank_like boolean not null default false,
     update_note text,
     created_at timestamptz,
     updated_at timestamptz

@@ -1,0 +1,19 @@
+
+[takken] 神奈川県: 8,748件 / 175ページ
+Traceback (most recent call last):
+  File "C:\Users\f-yuj\dev\sales_leads_app\scripts\fetch_mlit_companies.py", line 682, in <module>
+    main()
+  File "C:\Users\f-yuj\dev\sales_leads_app\scripts\fetch_mlit_companies.py", line 663, in main
+    result = run_fetch(
+             ^^^^^^^^^^
+  File "C:\Users\f-yuj\dev\sales_leads_app\scripts\fetch_mlit_companies.py", line 523, in run_fetch
+    company_id, was_created = store.upsert_company(company, license=license_data)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\f-yuj\dev\sales_leads_app\storage.py", line 740, in upsert_company
+    self.upsert_license(company_id, license)
+  File "C:\Users\f-yuj\dev\sales_leads_app\storage.py", line 749, in upsert_license
+    self.client.table("company_licenses").update({k: v for k, v in license.items() if v is not None}).eq("id", existing_id).execute()
+  File "C:\Users\f-yuj\AppData\Local\Programs\Python\Python312\Lib\site-packages\postgrest\_sync\request_builder.py", line 47, in execute
+    r = self.request.send()
+        ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\f-yuj\AppData\Local\Programs\Python\Python312\Lib\site-packages\postgrest\base_request_builder.py", line 82, in send

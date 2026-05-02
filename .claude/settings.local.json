@@ -8,7 +8,12 @@
       "WebFetch(domain:db.yuiportal.mlit.go.jp)",
       "WebSearch",
       "Bash(python -c \"import bs4; print\\('bs4:', bs4.__version__\\)\")",
-      "Bash(python scripts/fetch_mlit_companies.py --category takken --prefecture 神奈川県 --limit 5)"
+      "Bash(python scripts/fetch_mlit_companies.py --category takken --prefecture 神奈川県 --limit 5)",
+      "Bash(python scripts/fetch_mlit_companies.py --category takken --prefectures 東京都 神奈川県 埼玉県 千葉県 茨城県 栃木県 群馬県 --apply)",
+      "Bash(Get-Content \"C:\\\\Users\\\\f-yuj\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-f-yuj-dev-sales-leads-app\\\\b1f67ab7-f30b-43e2-97dc-512f74bc1b93\\\\tasks\\\\bzwo5udab.output\" -Wait)",
+      "Bash(Select-String --line-buffered \".\")",
+      "Read(//c/Users/f-yuj/AppData/Local/Temp/claude/c--Users-f-yuj-dev-sales-leads-app/b1f67ab7-f30b-43e2-97dc-512f74bc1b93/tasks/**)",
+      "Bash(python -u -X utf8 scripts/fetch_mlit_companies.py --category takken --prefectures 東京都 神奈川県 埼玉県 千葉県 茨城県 栃木県 群馬県 --apply)"
     ]
   }
 }

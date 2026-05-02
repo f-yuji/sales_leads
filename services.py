@@ -15,6 +15,7 @@ BUSINESS_CATEGORIES = [
     "construction",
     "rental_management",
     "mansion_management",
+    "accommodation",
     "reform",
     "komuten",
     "appraisal",
@@ -30,6 +31,7 @@ BUSINESS_CATEGORY_LABELS = {
     "construction": "建設",
     "rental_management": "賃貸住宅管理",
     "mansion_management": "マンション管理",
+    "accommodation": "住宅宿泊管理",
     "reform": "リフォーム",
     "komuten": "工務店",
     "appraisal": "不動産鑑定",
@@ -45,6 +47,7 @@ LICENSE_TYPES = [
     "construction",
     "rental_management",
     "mansion_management",
+    "accommodation",
     "appraisal",
     "survey",
     "consultant",
@@ -56,6 +59,7 @@ LICENSE_TYPE_LABELS = {
     "construction": "建設",
     "rental_management": "賃貸管理",
     "mansion_management": "マンション管理",
+    "accommodation": "住宅宿泊管理",
     "appraisal": "鑑定",
     "survey": "測量",
     "consultant": "コンサル",
@@ -68,6 +72,7 @@ SOURCE_TYPES = [
     "mlit_kensetsu",
     "mlit_rental_management",
     "mlit_mansion_management",
+    "mlit_accommodation",
     "gbizinfo",
     "official_site",
     "brave_search",
@@ -287,6 +292,8 @@ def normalize_company_row(row: dict[str, Any], center_lat: float, center_lon: fl
         "manual_updated_by": None,
         "is_active": True,
         "needs_review": False,
+        "is_branch": bool(row.get("is_branch")),
+        "is_bank_like": bool(row.get("is_bank_like")),
         "update_note": None,
         "created_at": ts,
         "updated_at": ts,
@@ -363,6 +370,10 @@ def passes_filters(row: dict[str, Any], filters: dict[str, Any]) -> bool:
         exclude_terms = [term.strip().lower() for term in exclude_q.replace(",", " ").split() if term.strip()]
         if any(term in target.lower() for term in exclude_terms):
             return False
+    if not filters.get("show_branches") and row.get("is_branch"):
+        return False
+    if not filters.get("show_banks") and row.get("is_bank_like"):
+        return False
     if clean_text(filters.get("has_tel")) == "1" and not row.get("tel"):
         return False
     if clean_text(filters.get("has_website")) == "1" and not row.get("website_url"):

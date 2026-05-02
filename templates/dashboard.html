@@ -48,7 +48,7 @@
             {% set st = row.status or '未対応' %}
             {% set meta = status_meta.get(st, {'cls': 'b-untouched'}) %}
             <tr>
-              <td><span class="strong">{{ row.company_name }}</span></td>
+              <td><span class="strong">{{ (row.company_name or '').replace('　※', '').replace('※', '') }}</span></td>
               <td>{{ row.business_category }}</td>
               <td>{{ row.prefecture or "" }}{{ row.city or "" }}{{ row.ward or "" }}</td>
               <td class="num">{% if row.distance_km is not none %}{{ row.distance_km }} km{% endif %}</td>

@@ -65,6 +65,8 @@
       <label class="check"><input type="checkbox" name="has_email" value="1" {% if filters.has_email == "1" %}checked{% endif %}>メールあり</label>
       <label class="check"><input type="checkbox" name="has_form" value="1" {% if filters.has_form == "1" %}checked{% endif %}>フォームあり</label>
       <label class="check"><input type="checkbox" name="show_inactive" value="1" {% if filters.show_inactive == "1" %}checked{% endif %}>無効も表示</label>
+      <label class="check"><input type="checkbox" name="show_branches" value="1" {% if filters.show_branches == "1" %}checked{% endif %}>支店を含める</label>
+      <label class="check"><input type="checkbox" name="show_banks" value="1" {% if filters.show_banks == "1" %}checked{% endif %}>銀行・信金を含める</label>
 
       <div class="license-filter">
         <span class="filter-label">保有許認可：</span>
@@ -165,6 +167,7 @@
 .badge-construction { background: #3a2a00; color: #dcdcaa; }
 .badge-rental_management { background: #1e3a1e; color: #4ec9b0; }
 .badge-mansion_management { background: #2a1a3a; color: #c586c0; }
+.badge-accommodation { background: #2a1a00; color: #ffd700; }
 .badge-appraisal, .badge-survey, .badge-consultant { background: #1e2a3a; color: #9cdcfe; }
 .badge-unknown { background: #333; color: #888; }
 .badge-review { font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; background: #f48771; color: #fff; font-weight: 600; }

@@ -109,6 +109,8 @@ def current_filters() -> dict:
         "sort": g("sort", "imported_desc"),
         "license_types": license_types,
         "show_inactive": g("show_inactive"),
+        "show_branches": g("show_branches"),
+        "show_banks": g("show_banks"),
     }
 
 
@@ -356,8 +358,7 @@ def _tee_subprocess(proc: subprocess.Popen, log_path: Path) -> None:
     with open(log_path, "wb") as lf:
         for line in iter(proc.stdout.readline, b""):
             try:
-                sys.stdout.buffer.write(line)
-                sys.stdout.flush()
+                print(line.decode("utf-8", errors="replace"), end="", flush=True)
             except Exception:
                 pass
             lf.write(line)
@@ -375,7 +376,7 @@ def fetch_mlit() -> Response:
         return redirect(url_for("import_csv"))
 
     script = Path(__file__).parent / "scripts" / "fetch_mlit_companies.py"
-    cmd = [sys.executable, "-u", str(script), "--category", category, "--prefecture", prefecture, "--apply"]
+    cmd = [sys.executable, "-u", "-X", "utf8", str(script), "--category", category, "--prefecture", prefecture, "--apply"]
     if mark_missing:
         cmd.append("--mark-missing")
 
@@ -415,10 +416,12 @@ def fetch_mlit_log():
     try:
         text = log_path.read_bytes().decode("utf-8", errors="replace")
         lines = text.splitlines()
-        done = "=== 結果 ===" in text
+        completed = "=== 結果 ===" in text
+        stale = (time.time() - log_path.stat().st_mtime) > 60
+        done = completed or stale
         return {"lines": lines[-300:], "done": done}
     except Exception:
-        return {"lines": [], "done": False}
+        return {"lines": [], "done": True}
 
 
 @app.get("/health")

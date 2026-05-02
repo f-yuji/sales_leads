@@ -44,6 +44,8 @@ COMPANY_COLUMNS = [
     "manual_updated_by",
     "is_active",
     "needs_review",
+    "is_branch",
+    "is_bank_like",
     "update_note",
     "created_at",
     "updated_at",
@@ -271,6 +273,8 @@ class SQLiteStore:
                 ("last_manual_updated_at", "text"),
                 ("manual_updated_by", "text"),
                 ("needs_review", "integer not null default 0"),
+                ("is_branch", "integer not null default 0"),
+                ("is_bank_like", "integer not null default 0"),
                 ("update_note", "text"),
                 ("created_at", "text"),
                 ("updated_at", "text"),
@@ -303,6 +307,15 @@ class SQLiteStore:
     # ---- 重複判定 ----
 
     def _find_duplicate_id(self, row: dict[str, Any]) -> int | None:
+        # source_record_id がある場合はそれを正とし、name/tel マッチは行わない
+        if row.get("source_record_id") and row.get("source_type"):
+            with self.connect() as conn:
+                found = conn.execute(
+                    "select id from companies where source_record_id = ? and source_type = ? limit 1",
+                    (row["source_record_id"], row["source_type"]),
+                ).fetchone()
+            return int(found["id"]) if found else None
+
         conditions: list[str] = []
         params: list[Any] = []
         if row.get("corporate_number"):
@@ -442,6 +455,11 @@ class SQLiteStore:
             # デフォルトで is_active=1 のみ表示
             if not (filters and filters.get("show_inactive")):
                 clauses.append("c.is_active = 1")
+            # デフォルトで支店・銀行類を非表示
+            if not (filters and filters.get("show_branches")):
+                clauses.append("(c.is_branch = 0 OR c.is_branch IS NULL)")
+            if not (filters and filters.get("show_banks")):
+                clauses.append("(c.is_bank_like = 0 OR c.is_bank_like IS NULL)")
 
             if filters:
                 if filters.get("company_name"):
@@ -681,6 +699,13 @@ class SupabaseStore:
             return False
 
     def _find_duplicate_id(self, row: dict[str, Any]) -> str | None:
+        # source_record_id がある場合はそれを正とし、name/tel マッチは行わない
+        if row.get("source_record_id") and row.get("source_type"):
+            r = (self.client.table("companies").select("id")
+                 .eq("source_record_id", row["source_record_id"])
+                 .eq("source_type", row["source_type"]).limit(1).execute())
+            return r.data[0]["id"] if r.data else None
+
         if row.get("corporate_number"):
             r = self.client.table("companies").select("id").eq("corporate_number", row["corporate_number"]).limit(1).execute()
             if r.data:
@@ -787,8 +812,9 @@ class SupabaseStore:
 
         if filters:
             py_keys = ("exclude_q", "radius_km", "license_types", "status",
-                       "has_website", "has_email", "has_form", "has_contact")
-            py_filters = {k: filters[k] for k in py_keys if filters.get(k)}
+                       "has_website", "has_email", "has_form", "has_contact",
+                       "show_branches", "show_banks")
+            py_filters = {k: filters[k] for k in py_keys if k in filters}
             if py_filters:
                 rows = [r for r in rows if passes_filters(r, py_filters)]
         return rows
@@ -857,6 +883,11 @@ class SupabaseStore:
         # デフォルトで is_active のみ
         if not (filters and filters.get("show_inactive")):
             query = query.eq("is_active", True)
+        # デフォルトで支店・銀行類を非表示
+        if not (filters and filters.get("show_branches")):
+            query = query.eq("is_branch", False)
+        if not (filters and filters.get("show_banks")):
+            query = query.eq("is_bank_like", False)
 
         if allowed_ids is not None:
             query = query.in_("id", list(allowed_ids))
