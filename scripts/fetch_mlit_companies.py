@@ -57,7 +57,7 @@ PREF_CODES: dict[str, str] = {
 PREF_NAMES = list(PREF_CODES.keys())
 
 CATEGORY_CONFIG: dict[str, dict] = {
-    "takken": {
+    "real_estate": {
         "url": BASE_URL + "takkenKensaku.do",
         "source_type": "mlit_takken",
         "primary_business_category": "real_estate",
@@ -96,6 +96,7 @@ CATEGORY_CONFIG: dict[str, dict] = {
         "extra_params": {},
     },
 }
+CATEGORY_CONFIG["takken"] = CATEGORY_CONFIG["real_estate"]
 
 BRANCH_KEYWORDS = {"支店", "営業所", "出張所"}
 BANK_LIKE_KEYWORDS = {"銀行", "信用金庫", "信金", "信用組合", "労働金庫", "農業協同組合", "漁業協同組合"}

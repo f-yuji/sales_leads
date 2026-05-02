@@ -16,8 +16,6 @@ BUSINESS_CATEGORIES = [
     "rental_management",
     "mansion_management",
     "accommodation",
-    "reform",
-    "komuten",
     "appraisal",
     "survey",
     "consultant",
@@ -31,12 +29,10 @@ BUSINESS_CATEGORY_LABELS = {
     "construction": "建設",
     "rental_management": "賃貸住宅管理",
     "mansion_management": "マンション管理",
-    "accommodation": "住宅宿泊管理",
-    "reform": "リフォーム",
-    "komuten": "工務店",
+    "accommodation": "宿泊/民泊管理",
     "appraisal": "不動産鑑定",
-    "survey": "測量・調査",
-    "consultant": "コンサルタント",
+    "survey": "測量/調査",
+    "consultant": "コンサル",
     "shop": "店舗",
     "owner": "オーナー",
     "unknown": "不明",
@@ -246,6 +242,8 @@ def infer_license_type(row: dict[str, Any]) -> str:
         return "rental_management"
     if "mansion_management" in joined or "mlit_mansion_management" in joined:
         return "mansion_management"
+    if "accommodation" in joined or "mlit_accommodation" in joined:
+        return "accommodation"
     license_no = pick(row, "license_no") or ""
     if license_no:
         return "takken"

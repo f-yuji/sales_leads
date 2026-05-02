@@ -367,7 +367,7 @@ def _tee_subprocess(proc: subprocess.Popen, log_path: Path) -> None:
 
 @app.post("/admin/fetch-mlit")
 def fetch_mlit() -> Response:
-    category = request.form.get("category", "takken")
+    category = request.form.get("category", "real_estate")
     prefecture = request.form.get("prefecture", "").strip()
     mark_missing = bool(request.form.get("mark_missing"))
 
